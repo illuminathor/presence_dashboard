@@ -7,8 +7,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=presence
-WorkingDirectory=/opt/presence/ingest
-EnvironmentFile=/opt/presence/ingest/.env
+WorkingDirectory=/opt/presence/src/ingest
+EnvironmentFile=/opt/presence/src/ingest/.env
 # heap Node dibatasi ~96 MB; systemd membatasi total 200 MB agar server 1 GB tetap aman
 ExecStart=/usr/bin/node --max-old-space-size=96 dist/index.js
 Restart=always
@@ -17,7 +17,7 @@ MemoryMax=200M
 CPUQuota=50%
 NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/opt/presence/ingest/data
+ReadWritePaths=/opt/presence/src/ingest/data
 
 [Install]
 WantedBy=multi-user.target

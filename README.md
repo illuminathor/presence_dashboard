@@ -82,7 +82,8 @@ broker + REST tiruan, dan Chrome headless, **belum** dengan project Supabase ata
 
 ## Deploy / update (satu perintah)
 
-Setelah setup awal server selesai, jalankan dari laptop:
+Kode di server diambil lewat `git pull` dari `/opt/presence/src`. Setelah setup awal selesai,
+push perubahan lalu jalankan dari laptop:
 
 ```bash
 DEPLOY_HOST=user@server ./deploy/deploy.sh        # web + ingest
@@ -90,5 +91,18 @@ DEPLOY_HOST=user@server ./deploy/deploy.sh web    # hanya web
 DEPLOY_HOST=user@server ./deploy/deploy.sh ingest # hanya ingest
 ```
 
-Script membangun semuanya di laptop (server 1 GB tidak perlu build), mengirim lewat rsync,
-lalu memasang dan me-restart service. `ingest/.env` di server tidak ditimpa.
+Setup awal server (sekali):
+
+```bash
+sudo useradd -r -m -d /opt/presence -s /usr/sbin/nologin presence
+sudo -u presence git clone https://github.com/illuminathor/presence_dashboard.git /opt/presence/src
+sudo -u presence cp /opt/presence/src/ingest/.env.example /opt/presence/src/ingest/.env   # lalu isi
+sudo -u presence cp /opt/presence/src/web/.env.example /opt/presence/src/web/.env         # lalu isi
+sudo chmod 600 /opt/presence/src/ingest/.env
+sudo cp /opt/presence/src/deploy/presence-ingest.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable presence-ingest
+sudo cp /opt/presence/src/deploy/nginx.conf /etc/nginx/conf.d/presence.conf   # ganti server_name
+```
+
+Lalu jalankan `deploy.sh` untuk build dan start pertama. Build web di server 1 GB memakai heap
+maksimal 512 MB; kalau sering gagal kehabisan memori, tambahkan swap 1 GB.
