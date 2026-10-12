@@ -1,69 +1,84 @@
 # Presence Monitoring Dashboard
 
 Dashboard web untuk melihat okupansi ruangan (terisi/kosong) dari sensor presence 24 GHz
-lewat Shelly 2PM → MQTT. Tanpa Docker; target server 1 GB RAM / 2 CPU.
+lewat Shelly 2PM → MQTT. Tanpa Docker, tanpa layanan eksternal; target server 1 GB RAM / 2 CPU.
 
 ```
-Shelly ──MQTT──▶ ingest (Node, systemd) ──REST──▶ Supabase (Postgres/Auth/Realtime/Vault)
-                                                       ▲
-                                  web (static, nginx) ─┘  login + RLS
+Shelly ──MQTT──▶ server (Node, 1 proses) ──▶ SQLite (server/data/presence.db)
+                     ├─ API + login (cookie sesi)
+                     └─ melayani web (web/dist) + update live (SSE)
 ```
 
 | Folder | Isi |
 |---|---|
-| `supabase/migrations/` | Skema, RLS, fungsi hitungan (SQL) |
-| `ingest/` | Service MQTT → Supabase (satu-satunya dependency: `mqtt`) |
-| `web/` | Frontend React + Vite + Tailwind + ECharts (hasil build = file statis) |
-| `deploy/` | Unit systemd dan contoh nginx |
+| `server/` | MQTT, SQLite, API, login, penghitungan; satu dependency: `mqtt` |
+| `web/` | Frontend React + Vite + Tailwind + ECharts (hasil build = file statis, dilayani server) |
+| `deploy/` | Unit systemd (user), contoh nginx, `deploy.sh` |
 
-## 1. Supabase (cloud)
+Butuh **Node ≥ 22.13** (memakai `node:sqlite` bawaan, tanpa modul native).
 
-1. Buat project di supabase.com.
-2. **Authentication → Providers → Email**: matikan *Allow new users to sign up* (invite-only).
-3. **Authentication → URL Configuration**: isi *Site URL* dengan URL dashboard (dipakai link reset password).
-4. Jalankan dua file di `supabase/migrations/` berurutan lewat **SQL Editor** (tanpa Docker).
-   Alternatif: `supabase link` lalu `supabase db push` (CLI tanpa Docker cukup untuk ini).
-5. **Authentication → Users → Invite user** untuk setiap pengguna. Jadikan admin pertama:
-   ```sql
-   update public.profiles set role = 'admin'
-   where user_id = (select id from auth.users where email = 'anda@contoh.com');
-   ```
-6. **Settings → API Keys**: catat Project URL, *publishable key* `sb_publishable_...` (untuk web), dan *secret key* `sb_secret_...` (untuk ingest — rahasia). Key legacy `anon`/`service_role` akan di-deprecate Supabase; keduanya jenis key masih diterima, tapi pakai yang baru.
-
-## 2. Ingest (di server)
+## Setup awal di server (sekali)
 
 ```bash
-cd ingest
-cp .env.example .env     # isi SUPABASE_URL dan SUPABASE_SECRET_KEY
-npm ci && npm run build
+git clone https://github.com/illuminathor/presence_dashboard.git ~/presence_dashboard
+cd ~/presence_dashboard
+cp server/.env.example server/.env        # opsional: ubah PORT/HOST
+
+mkdir -p ~/.config/systemd/user && cp deploy/presence.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable presence
+
+sudo loginctl enable-linger $USER         # service tetap jalan setelah logout/reboot
 ```
 
-Pasang service (sesuaikan path/user di file unit):
+Build dan start pertama:
 
 ```bash
-mkdir -p ~/.config/systemd/user && cp deploy/presence-ingest.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now presence-ingest
-journalctl --user -u presence-ingest -f
+./deploy/deploy.sh
 ```
 
-Batas memori: heap Node 96 MB, `MemoryMax=200M`, `CPUQuota=50%`. Ingest memakai polling
-(config 5 dtk, tes koneksi 2 dtk), bukan websocket Realtime, agar ringan. Pesan yang gagal
-dikirim ke Supabase disimpan di antrean disk (`ingest/data/queue.jsonl`) dan dikirim ulang.
-
-Broker MQTT diatur dari dashboard (menu **Konfigurasi MQTT**, khusus admin), bukan dari `.env`.
-
-## 3. Web
-
-Build di laptop (server tidak perlu Node untuk web):
+Buat akun admin pertama (password acak dicetak; bisa juga diberi sendiri sebagai argumen terakhir):
 
 ```bash
-cd web
-cp .env.example .env     # VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY
-npm ci && npm run build  # hasil: web/dist
+cd server && npm run user -- add admin@contoh.com admin
 ```
 
-Salin `web/dist/` ke server, sajikan lewat nginx (lihat `deploy/nginx.conf`; perlu fallback
-SPA ke `index.html`). Pakai HTTPS.
+Buka `http://IP-server:3000` (set `HOST=0.0.0.0` di `server/.env` untuk akses langsung, lalu
+`systemctl --user restart presence`), login, lalu buka **Konfigurasi MQTT**: isi data broker →
+**Tes koneksi** → **Simpan**. Beri nama ruangan di bagian *Nama ruangan*.
+
+### HTTPS (disarankan)
+Pakai nginx sebagai reverse proxy (`deploy/nginx.conf`) dan certbot:
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/conf.d/presence.conf   # ganti server_name
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d dashboard.contoh.com
+```
+
+## Update
+
+Push dari laptop, lalu di server: `~/presence_dashboard/deploy/deploy.sh`
+(git pull → build web → tes + build server → restart). Build web memakai heap maksimal 512 MB;
+kalau kehabisan memori di server 1 GB, tambahkan swap 1 GB.
+
+## User & password
+
+- Akun tidak bisa mendaftar sendiri; admin membuatnya di menu **User** (atau lewat CLI).
+- Lupa password: admin menggantinya di menu User, atau di server
+  `cd server && npm run user -- passwd email@contoh.com`.
+- CLI lain: `npm run user -- list`, `npm run user -- add <email> viewer`.
+
+## Data & backup
+
+Semua data ada di satu file: `server/data/presence.db` (mode WAL, jadi ada juga `-wal`/`-shm`).
+Backup yang aman saat server jalan:
+
+```bash
+sqlite3 ~/presence_dashboard/server/data/presence.db ".backup '/path/backup.db'"
+```
+
+Berisi password MQTT (teks biasa) dan hash password user, jadi file dibuat dengan izin `600`;
+jangan di-commit atau dibagikan.
 
 ## Catatan perilaku
 
@@ -73,41 +88,13 @@ SPA ke `index.html`). Pakai HTTPS.
 - Waktu offline (dari topic online) dikecualikan dari persentase okupansi.
 - Jam perangkat yang melenceng > 5 menit ditandai `ts_suspect`.
 - Semua waktu ditampilkan dalam WIB (UTC+7) di browser mana pun.
-- Password MQTT disimpan di Supabase Vault dan tidak pernah dikirim balik ke browser.
+- Konfigurasi MQTT yang baru langsung diterapkan saat disimpan; bila gagal, koneksi lama dipertahankan.
 
-## Pengujian
-
-`cd ingest && npm test` (parser). Logika SQL, alur ingest, dan UI sudah diuji dengan PGlite,
-broker + REST tiruan, dan Chrome headless, **belum** dengan project Supabase atau broker asli.
-
-## Deploy / update (tanpa sudo)
-
-Semuanya berjalan sebagai user biasa di home, tanpa `/opt` dan tanpa sudoers. Update:
-push dari laptop, lalu di server:
+## Pengembangan
 
 ```bash
-~/presence_dashboard/deploy/deploy.sh          # web + ingest
-~/presence_dashboard/deploy/deploy.sh web      # hanya web
-~/presence_dashboard/deploy/deploy.sh ingest   # hanya ingest
+cd server && npm i && npm test && npm run dev     # API di :3000
+cd web && npm i && npm run dev                    # Vite di :5173, /api di-proxy ke :3000
 ```
 
-Setup awal server (sekali; hanya 3 baris yang butuh sudo, semuanya bersifat sistem):
-
-```bash
-git clone https://github.com/illuminathor/presence_dashboard.git ~/presence_dashboard
-cd ~/presence_dashboard
-cp ingest/.env.example ingest/.env && chmod 600 ingest/.env   # lalu isi
-cp web/.env.example web/.env                                   # lalu isi
-mkdir -p ~/.config/systemd/user && cp deploy/presence-ingest.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable presence-ingest
-
-sudo loginctl enable-linger $USER      # service user tetap jalan setelah logout/reboot
-chmod 711 ~                            # agar nginx bisa membaca web/dist
-sudo cp deploy/nginx.conf /etc/nginx/conf.d/presence.conf   # ganti server_name dan USERNAME
-```
-
-Lalu jalankan `deploy.sh` untuk build dan start pertama. Build web di server 1 GB memakai heap
-maksimal 512 MB; kalau sering gagal kehabisan memori, tambahkan swap 1 GB.
-Catatan: `node` harus ada di `/usr/bin` atau PATH systemd (jika memakai nvm, pasang Node dari
-NodeSource/apt saja). Batas CPU tidak dipasang karena butuh delegasi cgroup; batas memori
-(`MemoryMax`) dan heap Node tetap berlaku.
+Tes: `server/` punya tes parser dan logika perhitungan (SQLite in-memory).

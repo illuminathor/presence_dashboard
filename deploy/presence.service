@@ -1,0 +1,19 @@
+# systemd USER service: ~/.config/systemd/user/presence.service
+# Tidak butuh sudo untuk start/stop/restart. Butuh sekali: sudo loginctl enable-linger $USER
+[Unit]
+Description=Presence Monitor (MQTT + API + web)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/presence_dashboard/server
+EnvironmentFile=-%h/presence_dashboard/server/.env
+# heap Node dibatasi 128 MB; total proses dibatasi 256 MB agar server 1 GB tetap aman
+ExecStart=/usr/bin/env node --max-old-space-size=128 --disable-warning=ExperimentalWarning dist/index.js
+Restart=always
+RestartSec=3
+MemoryMax=256M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

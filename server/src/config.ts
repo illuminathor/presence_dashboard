@@ -8,14 +8,14 @@ export interface MqttCfg {
   topic_status: string; topic_online?: string | null
 }
 
-export const cfgKey = (c: MqttCfg & { updated_at?: string }) => JSON.stringify([c.host, c.port, c.protocol, c.username, c.topic_status, c.topic_online, c.updated_at])
+export const cfgKey = (c: MqttCfg & { updated_at?: number }) => JSON.stringify([c.host, c.port, c.protocol, c.username, c.topic_status, c.topic_online, c.updated_at])
 
 export const brokerUrl = (c: MqttCfg) =>
   `${c.protocol}://${c.host}:${c.port}${c.protocol === 'ws' || c.protocol === 'wss' ? '/mqtt' : ''}`
 
 /** Client ID stabil agar sesi persisten (clean=false) dikenali broker setelah restart. */
 export const stableClientId = () =>
-  'presence-ingest-' + createHash('sha1').update(hostname() + (process.env.SUPABASE_URL ?? '')).digest('hex').slice(0, 10)
+  'presence-ingest-' + createHash('sha1').update(hostname()).digest('hex').slice(0, 10)
 
 export function connectOpts(c: MqttCfg, o: { persistent: boolean; clientId: string }): IClientOptions {
   return {

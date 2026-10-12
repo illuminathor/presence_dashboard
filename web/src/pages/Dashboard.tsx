@@ -64,7 +64,7 @@ export default function Dashboard() {
   const lastSeen = ds?.last_seen ? Date.parse(ds.last_seen) : null
 
   if (devices && devices.length === 0) {
-    return <Card><p className="py-8 text-center text-muted">Belum ada data sensor. Pastikan service ingest berjalan dan konfigurasi MQTT (menu admin) sudah benar.</p></Card>
+    return <Card><p className="py-8 text-center text-muted">Belum ada data sensor. Pastikan konfigurasi MQTT (menu admin) sudah benar dan sensor mengirim data.</p></Card>
   }
 
   return (

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { api, get } from '../lib/api'
 import { fmtAgo, wibTimeSec } from '../lib/time'
 import { useNow } from '../lib/theme'
 
 interface Form { host: string; protocol: 'mqtt' | 'mqtts' | 'ws' | 'wss'; port: string; username: string; password: string; topic_status: string; topic_online: string }
 interface Step { id: string; label: string; status: 'pending' | 'running' | 'ok' | 'failed'; detail?: string }
 interface Sample { t: string; topic: string; payload: string; ok: boolean; reason?: string }
-interface TestRow { id: number; status: 'pending' | 'running' | 'done' | 'failed'; steps: Step[]; sample_messages: Sample[] }
+interface TestRow { id: string; status: 'pending' | 'running' | 'done' | 'failed'; steps: Step[]; sample_messages: Sample[] }
 interface IngestStatus { state: 'unconfigured' | 'connected' | 'reconnecting' | 'error'; last_message_at: string | null; last_error: string | null; msg_count: number; invalid_count: number; devices: string[]; recent: Sample[] }
 interface Dev { device_id: string; room_name: string | null }
 
@@ -59,20 +59,20 @@ export default function MqttConfig() {
   const formKey = JSON.stringify(form)
 
   useEffect(() => {
-    supabase.from('mqtt_config').select('*').eq('id', 1).maybeSingle().then(({ data }) => {
+    get<(Omit<Form, 'port' | 'password' | 'topic_online' | 'username'> & { port: number; username: string | null; topic_online: string | null; has_password: boolean }) | null>('/mqtt/config').then((data) => {
       if (data) {
         setForm({ host: data.host, protocol: data.protocol, port: String(data.port), username: data.username ?? '', password: '', topic_status: data.topic_status, topic_online: data.topic_online ?? '' })
         setHasPassword(data.has_password)
       }
       setLoaded(true)
-    })
-    supabase.from('devices').select('device_id, room_name').order('device_id').then(({ data }) => setDevs(data ?? []))
+    }).catch(() => setLoaded(true))
+    get<Dev[]>('/devices').then(setDevs).catch(() => {})
   }, [])
 
   // status ingest (badge + pesan live), polling 3 dtk
   useEffect(() => {
     let live = true
-    const load = () => supabase.from('ingest_status').select('*').eq('id', 1).maybeSingle().then(({ data }) => { if (live && data) setIngest(data as IngestStatus) })
+    const load = () => get<IngestStatus>('/mqtt/status').then((data) => { if (live) setIngest(data) }).catch(() => {})
     load(); const i = setInterval(load, 3000)
     return () => { live = false; clearInterval(i) }
   }, [])
@@ -86,41 +86,43 @@ export default function MqttConfig() {
   const runTest = useCallback(async () => {
     setNotice(null); setTesting(true); setTest(null)
     const payload = { host: form.host.trim(), port: Number(form.port), protocol: form.protocol, username: form.username.trim() || null, password: form.password, topic_status: form.topic_status.trim(), topic_online: form.topic_online.trim() || null }
-    const { data, error } = await supabase.from('mqtt_test_requests').insert({ payload }).select('id').single()
-    if (error || !data) { setTesting(false); return setNotice({ ok: false, text: `Gagal memulai tes: ${error?.message}` }) }
+    let id: string
+    try { id = (await api<{ id: string }>('POST', '/mqtt/test', payload)).id } catch (e) { setTesting(false); return setNotice({ ok: false, text: `Gagal memulai tes: ${(e as Error).message}` }) }
     const key = formKey
     const started = Date.now()
     clearInterval(pollTimer.current)
     pollTimer.current = setInterval(async () => {
-      const { data: row } = await supabase.from('mqtt_test_requests').select('id, status, steps, sample_messages').eq('id', data.id).maybeSingle()
-      if (row) setTest(row as TestRow)
+      const row = await get<TestRow>(`/mqtt/test/${id}`).catch(() => null)
+      if (row) setTest(row)
       const done = row && (row.status === 'done' || row.status === 'failed')
       if (done || Date.now() - started > 60_000) {
         clearInterval(pollTimer.current); setTesting(false)
         if (done) {
-          const st = (row.steps as Step[]).slice(0, 3)
-          if (st.length === 3 && st.every((s) => s.status === 'ok')) setTestedKey(key)
-        } else setNotice({ ok: false, text: 'Tes tidak dijawab. Pastikan service ingest sedang berjalan.' })
+          const st = row.steps.slice(0, 3)
+          if (st.length === 3 && st.every((x) => x.status === 'ok')) setTestedKey(key)
+        } else setNotice({ ok: false, text: 'Tes tidak selesai dalam 60 detik.' })
       }
     }, 1000)
   }, [form, formKey])
 
   async function save() {
     setSaving(true); setNotice(null)
-    const { error } = await supabase.rpc('save_mqtt_config', {
-      p_host: form.host, p_port: Number(form.port), p_protocol: form.protocol, p_username: form.username,
-      p_password: form.password, p_topic_status: form.topic_status, p_topic_online: form.topic_online,
-    })
-    setSaving(false)
-    if (error) return setNotice({ ok: false, text: error.message })
+    try {
+      const r = await api<{ ok: boolean; error?: string }>('PUT', '/mqtt/config', {
+        host: form.host, port: Number(form.port), protocol: form.protocol, username: form.username,
+        password: form.password, topic_status: form.topic_status, topic_online: form.topic_online,
+      })
+      setSaving(false)
+      if (!r.ok) return setNotice({ ok: false, text: `Tersimpan, tapi gagal menyambung: ${r.error}. Koneksi lama (bila ada) tetap dipakai.` })
+    } catch (e) { setSaving(false); return setNotice({ ok: false, text: (e as Error).message }) }
     if (form.password) setHasPassword(true)
     set('password', '')
-    setNotice({ ok: true, text: 'Tersimpan. Ingest akan menyambung ulang dalam ±10 detik tanpa restart; bila config baru gagal, config lama tetap dipakai.' })
+    setNotice({ ok: true, text: 'Tersimpan dan terhubung ke broker. Bila config baru gagal, config lama tetap dipakai.' })
   }
 
   async function renameRoom(id: string, name: string) {
-    const { error } = await supabase.from('devices').update({ room_name: name.trim() || null }).eq('device_id', id)
-    if (error) setNotice({ ok: false, text: error.message })
+    try { await api('PATCH', `/devices/${encodeURIComponent(id)}`, { room_name: name.trim() || null }) }
+    catch (e) { setNotice({ ok: false, text: (e as Error).message }) }
   }
 
   const canSave = Boolean(complete) && testedKey === formKey && !saving
@@ -158,7 +160,7 @@ export default function MqttConfig() {
           <label className="text-sm sm:col-span-3">Topic status presence<input className="field mt-1 font-mono" value={form.topic_status} onChange={(e) => set('topic_status', e.target.value)} /></label>
           <label className="text-sm sm:col-span-3">Topic online <span className="text-muted">(opsional)</span><input className="field mt-1 font-mono" value={form.topic_online} onChange={(e) => set('topic_online', e.target.value)} /></label>
         </div>
-        <p className="mt-3 text-xs text-muted">Client ID dibuat otomatis dan QoS tetap 1. Wildcard <code>+</code> pada topic menentukan <i>device_id</i>. Password disimpan terenkripsi di Supabase Vault dan tidak pernah dikirim balik ke browser.</p>
+        <p className="mt-3 text-xs text-muted">Client ID dibuat otomatis dan QoS tetap 1. Wildcard <code>+</code> pada topic menentukan <i>device_id</i>. Password disimpan di database server (file hanya bisa dibaca pemilik) dan tidak pernah dikirim balik ke browser.</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button className="btn-ghost" onClick={runTest} disabled={!complete || testing}>{testing ? 'Menguji…' : 'Tes koneksi'}</button>
           <button className="btn-primary" onClick={save} disabled={!canSave}>{saving ? 'Menyimpan…' : 'Simpan'}</button>
@@ -170,7 +172,7 @@ export default function MqttConfig() {
       {(test || testing) && (
         <Section title="Hasil tes">
           <ol className="space-y-2">
-            {(test?.steps?.length ? test.steps : [{ id: 'x', label: 'Menunggu service ingest…', status: 'running' } as Step]).map((s) => (
+            {(test?.steps?.length ? test.steps : [{ id: 'x', label: 'Menunggu hasil tes…', status: 'running' } as Step]).map((s) => (
               <li key={s.id} className="flex gap-3 text-sm">
                 <span className={`w-5 text-center font-bold ${STEP_CLR[s.status]}`} aria-label={s.status}>{STEP_ICON[s.status]}</span>
                 <div><div className={s.status === 'failed' ? 'font-medium text-bad' : ''}>{s.label}</div>{s.detail && <div className="text-xs text-muted">{s.detail}</div>}</div>
@@ -183,7 +185,7 @@ export default function MqttConfig() {
 
       <Section title="Pesan masuk (live)" right={ingest && <span className="text-xs text-muted">{ingest.msg_count} sesuai · {ingest.invalid_count} tidak sesuai · {ingest.devices.length} device{ingest.devices.length ? ` (${ingest.devices.join(', ')})` : ''}</span>}>
         <Messages list={ingest?.recent ?? []} />
-        <p className="mt-2 text-xs text-muted">Pesan yang tidak sesuai format diabaikan oleh ingest. Hitungan dihitung sejak ingest terakhir dijalankan.</p>
+        <p className="mt-2 text-xs text-muted">Pesan yang tidak sesuai format diabaikan. Hitungan dihitung sejak server terakhir dijalankan.</p>
       </Section>
 
       <Section title="Nama ruangan">

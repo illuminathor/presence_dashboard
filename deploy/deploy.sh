@@ -1,28 +1,25 @@
 #!/usr/bin/env bash
-# Jalankan di server sebagai user biasa (tanpa sudo):  ~/presence_dashboard/deploy/deploy.sh [web|ingest|all]
-# Menarik kode terbaru dari GitHub, build, dan restart. Setup awal: lihat README.
+# Jalankan di server sebagai user biasa (tanpa sudo):  ~/presence_dashboard/deploy/deploy.sh
+# Menarik kode terbaru, build web + server, lalu restart service. Setup awal: lihat README.
 set -euo pipefail
-
-WHAT="${1:-all}"
-[[ "$WHAT" =~ ^(web|ingest|all)$ ]] || { echo "Argumen: web | ingest | all"; exit 1; }
 cd "$(dirname "$0")/.."
+
+node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=13)?0:1)' \
+  || { echo "Butuh Node >= 22.13 (sekarang $(node -v))"; exit 1; }
 
 echo "==> git pull"
 git pull --ff-only
 
-if [[ "$WHAT" != "web" ]]; then
-  echo "==> Ingest: build + restart"
-  (cd ingest && npm ci --silent && npm test --silent && npm run build)
-  systemctl --user restart presence-ingest
-  sleep 2
-  systemctl --user is-active presence-ingest
-  journalctl --user -u presence-ingest -n 8 --no-pager
-fi
+echo "==> Web: build"
+# batasi heap supaya tidak menghabiskan RAM server 1 GB
+(cd web && npm ci --silent && NODE_OPTIONS=--max-old-space-size=512 npm run build)
 
-if [[ "$WHAT" != "ingest" ]]; then
-  echo "==> Web: build"
-  [[ -f web/.env ]] || { echo "web/.env belum ada"; exit 1; }
-  # batasi heap supaya tidak menghabiskan RAM server 1 GB; hasil di web/dist (dilayani nginx)
-  (cd web && npm ci --silent && NODE_OPTIONS=--max-old-space-size=512 npm run build)
-fi
+echo "==> Server: tes + build"
+(cd server && npm ci --silent && npm test --silent && npm run build)
+
+echo "==> Restart"
+systemctl --user restart presence
+sleep 2
+systemctl --user is-active presence
+journalctl --user -u presence -n 8 --no-pager
 echo "==> Selesai"

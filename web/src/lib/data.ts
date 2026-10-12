@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from './supabase'
+import { get } from './api'
 import { bucketOf, type WindowSpec } from './time'
 
 export interface PeriodStats {
@@ -16,31 +16,40 @@ export interface DeviceStatus { device_id: string; current_status: 'occupied' | 
 export function useDevices() {
   const [devices, setDevices] = useState<DeviceRow[] | null>(null)
   useEffect(() => {
-    supabase.from('devices').select('device_id, room_name').order('device_id').then(({ data }) => setDevices(data ?? []))
+    get<DeviceRow[]>('/devices').then(setDevices).catch(() => setDevices([]))
   }, [])
   return devices
 }
 
-export function useDeviceStatus(device: string | null) {
-  const [status, setStatus] = useState<DeviceStatus | null>(null)
+/** Pemberitahuan "ada data baru" dari server (SSE). Browser menyambung ulang otomatis. */
+function useChangeStream(device: string | null, onChange: () => void) {
+  const cb = useRef(onChange)
+  cb.current = onChange
   useEffect(() => {
     if (!device) return
-    let live = true
-    const load = () => supabase.from('device_status').select('*').eq('device_id', device).maybeSingle()
-      .then(({ data }) => { if (live) setStatus(data as DeviceStatus | null) })
-    load()
-    const ch = supabase.channel(`ds-${device}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'device_status', filter: `device_id=eq.${device}` }, load)
-      .subscribe()
-    const poll = setInterval(load, 30_000) // cadangan bila Realtime terputus
-    return () => { live = false; clearInterval(poll); supabase.removeChannel(ch) }
+    const es = new EventSource('/api/stream')
+    es.onmessage = (e) => { try { if (JSON.parse(e.data).device === device) cb.current() } catch { /* abaikan */ } }
+    return () => es.close()
   }, [device])
+}
+
+export function useDeviceStatus(device: string | null) {
+  const [status, setStatus] = useState<DeviceStatus | null>(null)
+  const load = useCallback(() => {
+    if (device) get<DeviceStatus | null>(`/devices/${encodeURIComponent(device)}/status`).then(setStatus).catch(() => {})
+  }, [device])
+  useEffect(() => {
+    load()
+    const poll = setInterval(load, 30_000) // cadangan bila koneksi SSE terputus
+    return () => clearInterval(poll)
+  }, [load])
+  useChangeStream(device, load)
   return status
 }
 
 export interface DashData { summary: Summary; segments: Segment[]; buckets: Bucket[]; from: number; to: number; bucketMs: number }
 
-/** Ambil semua angka dashboard untuk satu window; refresh saat ada event baru (Realtime) dan tiap 30 dtk. */
+/** Ambil semua angka dashboard untuk satu window; refresh saat ada event baru (SSE) dan tiap 30 dtk. */
 export function useDashboard(device: string | null, spec: WindowSpec) {
   const [data, setData] = useState<DashData | null>(null)
   const [error, setError] = useState('')
@@ -58,39 +67,28 @@ export function useDashboard(device: string | null, spec: WindowSpec) {
     const bucketMs = bucketOf(s)
     const my = ++seq.current
     setLoading(true)
-    const args = { p_device: device, p_from: new Date(from).toISOString(), p_to: new Date(to).toISOString() }
-    const [sum, tl, bk] = await Promise.all([
-      supabase.rpc('get_summary', args),
-      supabase.rpc('get_timeline', args),
-      supabase.rpc('get_buckets', { ...args, p_bucket: `${Math.round(bucketMs / 1000)} seconds` }),
-    ])
-    if (my !== seq.current) return
-    setLoading(false)
-    const err = sum.error ?? tl.error ?? bk.error
-    if (err) return setError(err.message)
-    setError('')
-    setData({
-      summary: sum.data as Summary,
-      segments: (tl.data as { kind: Segment['kind']; start_ts: string; end_ts: string }[]).map((r) => ({ kind: r.kind, start: Date.parse(r.start_ts), end: Date.parse(r.end_ts) })),
-      buckets: (bk.data as { bucket_start: string; occupied: number; vacant: number }[]).map((r) => ({ start: Date.parse(r.bucket_start), occupied: r.occupied, vacant: r.vacant })),
-      from, to, bucketMs,
-    })
+    try {
+      const r = await get<{ summary: Summary; segments: Segment[]; buckets: Bucket[] }>(
+        `/dashboard?device=${encodeURIComponent(device)}&from=${from}&to=${to}&bucket=${bucketMs}`)
+      if (my !== seq.current) return
+      setError('')
+      setData({ ...r, from, to, bucketMs })
+    } catch (e) {
+      if (my === seq.current) setError((e as Error).message)
+    } finally {
+      if (my === seq.current) setLoading(false)
+    }
   }, [device])
 
   const key = `${spec.preset ?? 'c'}-${spec.preset ? spec.to - spec.from : `${spec.from}-${spec.to}`}`
   useEffect(() => { void load() }, [load, key])
 
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useChangeStream(device, () => { clearTimeout(timer.current); timer.current = setTimeout(() => void load(), 400) })
   useEffect(() => {
-    if (!device) return
-    let t: ReturnType<typeof setTimeout> | undefined
-    const soon = () => { clearTimeout(t); t = setTimeout(() => void load(), 400) }
-    const ch = supabase.channel(`ev-${device}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events', filter: `device_id=eq.${device}` }, soon)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'device_status', filter: `device_id=eq.${device}` }, soon)
-      .subscribe()
     const iv = setInterval(() => void load(), 30_000)
-    return () => { clearTimeout(t); clearInterval(iv); supabase.removeChannel(ch) }
-  }, [device, load])
+    return () => { clearInterval(iv); clearTimeout(timer.current) }
+  }, [load])
 
   return { data, error, loading }
 }
@@ -98,8 +96,8 @@ export function useDashboard(device: string | null, spec: WindowSpec) {
 export interface EventRow { id: number; ts: string; status: 'occupied' | 'vacant'; is_transition: boolean; ts_suspect: boolean }
 
 export async function fetchEvents(device: string, from: number, to: number, limit: number, offset = 0) {
-  const { data, error } = await supabase.from('events').select('id, ts, status, is_transition, ts_suspect')
-    .eq('device_id', device).gte('ts', new Date(from).toISOString()).lt('ts', new Date(to).toISOString())
-    .order('ts', { ascending: false }).order('id', { ascending: false }).range(offset, offset + limit - 1)
-  return { rows: (data ?? []) as EventRow[], error }
+  try {
+    const rows = await get<EventRow[]>(`/events?device=${encodeURIComponent(device)}&from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
+    return { rows, error: null as Error | null }
+  } catch (e) { return { rows: [] as EventRow[], error: e as Error } }
 }

@@ -1,32 +1,24 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { configured } from './lib/supabase'
 import { useAuth } from './lib/auth'
 import Layout from './components/Layout'
 import Login from './pages/Login'
-import SetPassword from './pages/SetPassword'
 import Dashboard from './pages/Dashboard'
 import MqttConfig from './pages/MqttConfig'
-
-function Splash({ children }: { children: React.ReactNode }) {
-  return <div className="grid min-h-screen place-items-center p-6 text-center text-muted">{children}</div>
-}
+import Users from './pages/Users'
+import Account from './pages/Account'
 
 export default function App() {
-  const { session, role, loading, recovery } = useAuth()
-
-  if (!configured) {
-    return <Splash><div>Env <b>VITE_SUPABASE_URL</b> dan <b>VITE_SUPABASE_ANON_KEY</b> belum diisi (lihat web/.env.example).</div></Splash>
-  }
-  if (loading) return <Splash>Memuat…</Splash>
-  if (recovery && session) return <SetPassword />
-  if (!session) {
-    return <Routes><Route path="*" element={<Login />} /></Routes>
-  }
+  const { user, loading } = useAuth()
+  if (loading) return <div className="grid min-h-screen place-items-center p-6 text-center text-muted">Memuat…</div>
+  if (!user) return <Routes><Route path="*" element={<Login />} /></Routes>
+  const admin = user.role === 'admin'
   return (
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
-        <Route path="settings/mqtt" element={role === 'admin' ? <MqttConfig /> : <Navigate to="/" replace />} />
+        <Route path="settings/mqtt" element={admin ? <MqttConfig /> : <Navigate to="/" replace />} />
+        <Route path="settings/users" element={admin ? <Users /> : <Navigate to="/" replace />} />
+        <Route path="akun" element={<Account />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

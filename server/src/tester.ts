@@ -1,7 +1,6 @@
 import mqtt from 'mqtt'
 import { brokerUrl, connectOpts, type MqttCfg } from './config.js'
 import { parseStatusPayload } from './parse.js'
-import { patch } from './db.js'
 
 type StepState = 'pending' | 'running' | 'ok' | 'failed'
 interface Step { id: string; label: string; status: StepState; detail?: string }
@@ -19,8 +18,10 @@ function explain(e: Error & { code?: string | number }): string {
   return e.message || String(c)
 }
 
-/** Jalankan tes 4 langkah; hasil ditulis bertahap ke baris mqtt_test_requests. */
-export async function runTest(requestId: number, cfg: MqttCfg): Promise<void> {
+export type Report = (status: 'running' | 'done' | 'failed', steps: Step[], samples: unknown[]) => void
+
+/** Jalankan tes 4 langkah; kemajuan dilaporkan lewat callback `report`. Password tidak pernah disimpan. */
+export async function runTest(cfg: MqttCfg, report: Report): Promise<void> {
   const steps: Step[] = [
     { id: 'connect', label: 'Terhubung ke broker', status: 'running' },
     { id: 'auth', label: 'Autentikasi diterima', status: 'pending' },
@@ -28,20 +29,13 @@ export async function runTest(requestId: number, cfg: MqttCfg): Promise<void> {
     { id: 'message', label: 'Pesan masuk (≤ 30 detik) & format sesuai', status: 'pending' },
   ]
   const samples: unknown[] = []
-  let lastFlush = 0
-  let flushing: Promise<unknown> = Promise.resolve()
-  const flush = (status: 'running' | 'done' | 'failed', force = false) => {
-    const now = Date.now()
-    if (!force && now - lastFlush < 600) return
-    lastFlush = now
-    flushing = flushing.then(() =>
-      patch('mqtt_test_requests', `id=eq.${requestId}`, { status, steps, sample_messages: samples }).catch(() => {}))
-  }
+  const flush = (status: 'running' | 'done' | 'failed', _force = false) =>
+    report(status, steps.map((s) => ({ ...s })), [...samples])
   const set = (id: string, status: StepState, detail?: string) => {
     const s = steps.find((x) => x.id === id)!
     s.status = status; s.detail = detail
   }
-  const finish = async (status: 'done' | 'failed') => { flush(status, true); await flushing }
+  const finish = async (status: 'done' | 'failed') => { flush(status, true) }
   flush('running', true)
 
   const t0 = Date.now()
