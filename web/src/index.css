@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --app: #f4f5f7; --card: #ffffff; --fg: #111827; --muted: #5b6472; --line: #e3e6ea;
+  --brand: #0f766e; --brand-fg: #ffffff;
+  --occ: #d97706; --occ-fg: #92400e; --occ-bg: #fef3c7;
+  --vac: #0d9488; --vac-fg: #0f766e; --vac-bg: #ccfbf1;
+  --off: #9ca3af; --off-fg: #4b5563; --off-bg: #e5e7eb;
+  --bad: #b91c1c; --bad-bg: #fee2e2; --ok: #15803d; --ok-bg: #dcfce7;
+}
+.dark {
+  --app: #0d1117; --card: #161b22; --fg: #e6edf3; --muted: #9aa4b2; --line: #2a313c;
+  --brand: #2dd4bf; --brand-fg: #04201c;
+  --occ: #f59e0b; --occ-fg: #fbbf24; --occ-bg: #3a2a08;
+  --vac: #2dd4bf; --vac-fg: #5eead4; --vac-bg: #0b2f2b;
+  --off: #6b7280; --off-fg: #9ca3af; --off-bg: #272d36;
+  --bad: #f87171; --bad-bg: #3b1416; --ok: #4ade80; --ok-bg: #12301c;
+}
+@theme inline {
+  --color-app: var(--app); --color-card: var(--card); --color-fg: var(--fg);
+  --color-muted: var(--muted); --color-line: var(--line);
+  --color-brand: var(--brand); --color-brand-fg: var(--brand-fg);
+  --color-occ: var(--occ); --color-occ-fg: var(--occ-fg); --color-occ-bg: var(--occ-bg);
+  --color-vac: var(--vac); --color-vac-fg: var(--vac-fg); --color-vac-bg: var(--vac-bg);
+  --color-off: var(--off); --color-off-fg: var(--off-fg); --color-off-bg: var(--off-bg);
+  --color-bad: var(--bad); --color-bad-bg: var(--bad-bg); --color-ok: var(--ok); --color-ok-bg: var(--ok-bg);
+}
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+body { background: var(--app); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+input, select, button { font: inherit; }
+@utility field { @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand; }
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50; }
+@utility btn-primary { @apply btn bg-brand text-brand-fg hover:opacity-90; }
+@utility btn-ghost { @apply btn border border-line bg-card hover:bg-off-bg; }

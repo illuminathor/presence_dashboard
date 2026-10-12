@@ -1,0 +1,15 @@
+{
+  "name": "presence-ingest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "tsx --env-file=.env src/index.ts",
+    "build": "tsc",
+    "start": "node --max-old-space-size=96 dist/index.js",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": { "mqtt": "^5.10.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "tsx": "^4.19.0", "typescript": "^5.6.0" }
+}
