@@ -79,3 +79,16 @@ SPA ke `index.html`). Pakai HTTPS.
 
 `cd ingest && npm test` (parser). Logika SQL, alur ingest, dan UI sudah diuji dengan PGlite,
 broker + REST tiruan, dan Chrome headless, **belum** dengan project Supabase atau broker asli.
+
+## Deploy / update (satu perintah)
+
+Setelah setup awal server selesai, jalankan dari laptop:
+
+```bash
+DEPLOY_HOST=user@server ./deploy/deploy.sh        # web + ingest
+DEPLOY_HOST=user@server ./deploy/deploy.sh web    # hanya web
+DEPLOY_HOST=user@server ./deploy/deploy.sh ingest # hanya ingest
+```
+
+Script membangun semuanya di laptop (server 1 GB tidak perlu build), mengirim lewat rsync,
+lalu memasang dan me-restart service. `ingest/.env` di server tidak ditimpa.
