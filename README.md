@@ -83,12 +83,12 @@ broker + REST tiruan, dan Chrome headless, **belum** dengan project Supabase ata
 ## Deploy / update (satu perintah)
 
 Kode di server diambil lewat `git pull` dari `/opt/presence/src`. Setelah setup awal selesai,
-push perubahan lalu jalankan dari laptop:
+push perubahan dari laptop, lalu di server jalankan:
 
 ```bash
-DEPLOY_HOST=user@server ./deploy/deploy.sh        # web + ingest
-DEPLOY_HOST=user@server ./deploy/deploy.sh web    # hanya web
-DEPLOY_HOST=user@server ./deploy/deploy.sh ingest # hanya ingest
+sudo /opt/presence/src/deploy/deploy.sh        # web + ingest
+sudo /opt/presence/src/deploy/deploy.sh web    # hanya web
+sudo /opt/presence/src/deploy/deploy.sh ingest # hanya ingest
 ```
 
 Setup awal server (sekali):
