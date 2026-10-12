@@ -1,27 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchEvents, useDashboard, useDeviceStatus, useDevices, type EventRow, type PeriodStats } from '../lib/data'
-import { PRESETS, fmtAgo, fmtDuration, fromWibInput, toWibInput, windowFromParams, wibFull, wibTime, wibTimeSec, wibDayTime, type PresetKey } from '../lib/time'
+import { fetchEvents, useDashboard, useDeviceStatus, useDevices, useHeatmap, type EventRow, type PeriodStats } from '../lib/data'
+import { PRESETS, fmtDuration, fromWibInput, toWibInput, windowFromParams, wibDayTime, wibFull, wibTime, wibTimeSec, type PresetKey } from '../lib/time'
 import { useNow, useTheme } from '../lib/theme'
-import { BucketChart, TimelineChart } from '../components/Charts'
+import { BucketChart, Heatmap, Legend, TimelineBar } from '../components/Charts'
+import { IconDownload, IconPresence, IconPresenceOff } from '../components/Icons'
 
-const LABEL = { occupied: 'TERISI', vacant: 'KOSONG' } as const
-
-function Card({ title, children, className = '' }: { title?: string; children: React.ReactNode; className?: string }) {
+function Card({ title, right, children, className = '' }: { title?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-2xl border border-line bg-card p-4 shadow-sm ${className}`}>
-      {title && <h2 className="mb-3 text-sm font-medium text-muted">{title}</h2>}
+    <section className={`rounded-2xl border border-line bg-card p-5 ${className}`}>
+      {(title || right) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[15px] font-bold">{title}</h2>{right}
+        </div>
+      )}
       {children}
     </section>
   )
 }
 
 function Delta({ cur, prev }: { cur: number; prev: number }) {
-  if (prev === 0 && cur === 0) return <span className="text-muted">– sama dgn periode lalu</span>
+  if (prev === 0 && cur === 0) return <span className="text-muted">sama dgn periode lalu</span>
   if (prev === 0) return <span className="text-muted">baru (periode lalu 0)</span>
   const pct = Math.round(((cur - prev) / prev) * 100)
-  if (pct === 0) return <span className="text-muted">= sama dgn periode lalu ({prev})</span>
-  return <span className={pct > 0 ? 'text-occ-fg' : 'text-vac-fg'}>{pct > 0 ? '↑' : '↓'} {Math.abs(pct)}% <span className="text-muted">vs {prev} periode lalu</span></span>
+  if (pct === 0) return <span className="text-muted">sama dgn periode lalu ({prev})</span>
+  return <span className="text-muted"><b className={pct > 0 ? 'text-occ-fg' : 'text-bad'}>{pct > 0 ? '↑' : '↓'} {Math.abs(pct)}%</b> vs {prev} periode lalu</span>
 }
 
 function CountCard({ kind, cur, prev }: { kind: 'occupied' | 'vacant'; cur: PeriodStats | undefined; prev: PeriodStats | undefined }) {
@@ -29,15 +32,17 @@ function CountCard({ kind, cur, prev }: { kind: 'occupied' | 'vacant'; cur: Peri
   const p = prev ? prev[`${kind}_count`] : 0
   return (
     <Card>
-      <div className={`flex items-center gap-2 text-sm font-medium ${kind === 'occupied' ? 'text-occ-fg' : 'text-vac-fg'}`}>
-        <span aria-hidden>{kind === 'occupied' ? '●' : '○'}</span>
-        {kind === 'occupied' ? 'Jadi terisi' : 'Jadi kosong'}
+      <div className="flex items-center gap-2 text-sm font-semibold text-muted">
+        <span className={`h-2.5 w-2.5 rounded-full ${kind === 'occupied' ? 'bg-occ' : 'bg-vac'}`} />
+        {kind === 'occupied' ? 'Jadi Occupied' : 'Jadi Vacant'}
       </div>
-      <div className="mt-2 text-4xl font-semibold tabular-nums">{n ?? '–'}</div>
-      <div className="mt-1 text-xs">{n !== null && <Delta cur={n} prev={p} />}</div>
+      <div className="mt-2 text-[40px] font-extrabold leading-none tabular-nums">{n ?? '–'}</div>
+      <div className="mt-2 text-xs">{n !== null && <Delta cur={n} prev={p} />}</div>
     </Card>
   )
 }
+
+const seg = (on: boolean) => `rounded-lg px-3 py-1.5 text-sm font-semibold ${on ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`
 
 export default function Dashboard() {
   const { dark } = useTheme()
@@ -47,6 +52,7 @@ export default function Dashboard() {
   const spec = useMemo(() => windowFromParams(params), [params])
   const { data, error, loading } = useDashboard(device, spec)
   const ds = useDeviceStatus(device)
+  const heat = useHeatmap(device)
   const now = useNow(1000)
 
   const setParam = (mut: (p: URLSearchParams) => void) => setParams((old) => { const p = new URLSearchParams(old); mut(p); return p }, { replace: true })
@@ -61,41 +67,33 @@ export default function Dashboard() {
   const cur = data?.summary.current, prev = data?.summary.prev
   const room = devices?.find((d) => d.device_id === device)?.room_name
   const since = ds?.since ? Date.parse(ds.since) : null
-  const lastSeen = ds?.last_seen ? Date.parse(ds.last_seen) : null
 
   if (devices && devices.length === 0) {
     return <Card><p className="py-8 text-center text-muted">Belum ada data sensor. Pastikan konfigurasi MQTT (menu admin) sudah benar dan sensor mengirim data.</p></Card>
   }
 
+  const occ = ds?.current_status === 'occupied'
+  const offline = ds ? !ds.online : false
+  const usedPct = cur?.occupancy_rate ?? null
+
   return (
     <div className="space-y-4">
-      {/* Bar atas: ruangan, status perangkat, time window */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          {devices && devices.length > 1 ? (
-            <select className="field !w-auto font-medium" value={device ?? ''} onChange={(e) => setParam((p) => p.set('d', e.target.value))} aria-label="Pilih ruangan">
-              {devices.map((d) => <option key={d.device_id} value={d.device_id}>{d.room_name || d.device_id}</option>)}
-            </select>
-          ) : <h1 className="text-lg font-semibold">{room || device || '…'}</h1>}
-          {ds && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${ds.online ? 'bg-ok-bg text-ok' : 'bg-off-bg text-off-fg'}`}>
-              <span aria-hidden>{ds.online ? '●' : '○'}</span>{ds.online ? 'Online' : 'Offline'}
-              {lastSeen && <span className="font-normal opacity-80">· data {fmtAgo(now - lastSeen)}</span>}
-            </span>
-          )}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight">{room || device || '…'}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {devices && devices.length > 1 ? (
+              <select className="field !w-auto !py-1" value={device ?? ''} onChange={(e) => setParam((p) => p.set('d', e.target.value))} aria-label="Pilih ruangan">
+                {devices.map((d) => <option key={d.device_id} value={d.device_id}>{d.room_name || d.device_id}</option>)}
+              </select>
+            ) : <span className="font-mono text-xs">{device}</span>}
+          </p>
         </div>
-
-        <div className="ml-auto flex flex-wrap items-center gap-1" role="group" aria-label="Time window">
+        <div className="flex flex-wrap gap-1 rounded-xl bg-surface2 p-1" role="group" aria-label="Time window">
           {(Object.keys(PRESETS) as PresetKey[]).map((k) => (
-            <button key={k} onClick={() => { pickPreset(k); setCustomOpen(false) }} aria-pressed={spec.preset === k}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${spec.preset === k ? 'border-brand bg-brand text-brand-fg' : 'border-line bg-card hover:bg-off-bg'}`}>
-              {PRESETS[k].label}
-            </button>
+            <button key={k} onClick={() => { pickPreset(k); setCustomOpen(false) }} aria-pressed={spec.preset === k} className={seg(spec.preset === k)}>{PRESETS[k].label}</button>
           ))}
-          <button onClick={() => setCustomOpen((o) => !o)} aria-pressed={spec.preset === null}
-            className={`rounded-lg border px-3 py-1.5 text-sm ${spec.preset === null ? 'border-brand bg-brand text-brand-fg' : 'border-line bg-card hover:bg-off-bg'}`}>
-            Kustom
-          </button>
+          <button onClick={() => setCustomOpen((o) => !o)} aria-pressed={spec.preset === null} className={seg(spec.preset === null)}>Custom</button>
         </div>
       </div>
 
@@ -110,59 +108,91 @@ export default function Dashboard() {
 
       {error && <div role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">Gagal memuat data: {error}</div>}
 
-      {/* F1–F3 + occupancy */}
+      {/* Status sekarang */}
+      <section className={`flex flex-wrap items-center gap-6 rounded-2xl border p-6 ${offline ? 'border-line bg-card' : occ ? 'border-occ-line bg-occ-bg' : 'border-line bg-card'}`}>
+        <div className={`grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full ${offline || !occ ? 'bg-vac-bg text-vac-fg' : 'bg-occ text-occ-fg'}`}>
+          {occ && !offline ? <IconPresence size={36} /> : <IconPresenceOff size={36} />}
+        </div>
+        <div className="min-w-[180px]">
+          <div className="text-xs font-bold uppercase tracking-wider text-muted">Status sekarang</div>
+          <div className="text-4xl font-extrabold leading-tight">
+            {!ds ? '…' : offline ? 'Offline' : !ds.current_status ? 'Menunggu data' : occ ? 'Occupied' : 'Vacant'}
+          </div>
+          {ds && offline && ds.current_status && <div className="text-xs text-muted">Status terakhir: {occ ? 'Occupied' : 'Vacant'}</div>}
+        </div>
+        <div className="ml-auto flex flex-wrap gap-x-10 gap-y-3">
+          <Fact label="Sejak" value={since ? `${wibTime(since)} WIB` : '–'} />
+          <Fact label="Durasi berjalan" value={since ? fmtDuration((now - since) / 1000) : '–'} />
+          <Fact label="Sensor" value="Radar 24 GHz" />
+          <div className="flex items-center gap-2 self-end text-xs font-bold text-muted">
+            <span className={`h-2 w-2 rounded-full ${offline ? 'bg-off' : 'animate-pulse bg-occ'}`} />{offline ? 'OFFLINE' : 'LIVE'}
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card className="col-span-2 lg:col-span-1">
-          <div className="text-sm font-medium text-muted">Status sekarang</div>
-          {ds && ds.current_status ? (
-            <>
-              <div className={`mt-2 flex items-center gap-2 text-3xl font-semibold ${!ds.online ? 'text-off-fg' : ds.current_status === 'occupied' ? 'text-occ-fg' : 'text-vac-fg'}`}>
-                <span aria-hidden>{!ds.online ? '◌' : ds.current_status === 'occupied' ? '●' : '○'}</span>
-                {!ds.online ? 'OFFLINE' : LABEL[ds.current_status]}
-              </div>
-              <div className="mt-1 text-xs text-muted">
-                {!ds.online && <>Status terakhir: {LABEL[ds.current_status]} · </>}
-                {since && <>sejak {wibTime(since)} WIB · <span className="tabular-nums">{fmtDuration((now - since) / 1000)}</span></>}
-              </div>
-            </>
-          ) : <div className="mt-2 text-muted">Menunggu data…</div>}
-        </Card>
         <CountCard kind="occupied" cur={cur} prev={prev} />
         <CountCard kind="vacant" cur={cur} prev={prev} />
         <Card>
-          <div className="text-sm font-medium text-muted">Ruangan terpakai</div>
-          <div className="mt-2 text-4xl font-semibold tabular-nums">{cur ? (cur.occupancy_rate === null ? '–' : `${cur.occupancy_rate}%`) : '–'}</div>
-          <div className="mt-1 text-xs text-muted">
-            {cur && <>{fmtDuration(cur.occupied_seconds)} terisi{cur.offline_seconds > 0 && <> · offline {fmtDuration(cur.offline_seconds)} dikecualikan</>}</>}
-            {prev?.occupancy_rate != null && cur?.occupancy_rate != null && <div>Periode lalu {prev.occupancy_rate}%</div>}
+          <div className="text-sm font-semibold text-muted">Occupancy rate</div>
+          <div className="mt-2 text-[40px] font-extrabold leading-none tabular-nums">{usedPct === null ? '–' : `${usedPct}%`}</div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface2"><div className="h-full rounded-full bg-occ" style={{ width: `${usedPct ?? 0}%` }} /></div>
+          <div className="mt-2 text-xs text-muted">
+            {cur && <>{fmtDuration(cur.occupied_seconds)} terpakai{cur.offline_seconds > 0 && <> · offline {fmtDuration(cur.offline_seconds)} dikecualikan</>}</>}
           </div>
+        </Card>
+        <Card>
+          <div className="text-sm font-semibold text-muted">Rata-rata sesi</div>
+          <div className="mt-2 text-[40px] font-extrabold leading-none">{cur?.avg_session_seconds != null ? fmtDuration(cur.avg_session_seconds) : '–'}</div>
+          <div className="mt-2 text-xs text-muted">Sesi terpanjang <b className="text-fg">{cur?.longest_session_seconds != null ? fmtDuration(cur.longest_session_seconds) : '–'}</b></div>
         </Card>
       </div>
 
-      <Card title={`Timeline status${data ? ` · ${wibDayTime(data.from)} – ${wibDayTime(data.to)} WIB` : ''}`}>
-        {data ? <TimelineChart segments={data.segments} from={data.from} to={data.to} dark={dark} /> : <div className="h-28 animate-pulse rounded-lg bg-off-bg" />}
+      <Card title="Timeline status" right={<Legend items={[{ label: 'Occupied', kind: 'occ' }, { label: 'Vacant', kind: 'vac' }, { label: 'Offline', kind: 'off' }]} />}>
+        {data ? <TimelineBar segments={data.segments} from={data.from} to={data.to} live={spec.preset !== null} /> : <div className="h-12 animate-pulse rounded-lg bg-surface2" />}
       </Card>
 
-      <Card title="Jumlah perubahan status per periode">
-        {data ? <BucketChart buckets={data.buckets} bucketMs={data.bucketMs} dark={dark} /> : <div className="h-60 animate-pulse rounded-lg bg-off-bg" />}
-        {loading && <div className="mt-1 text-right text-xs text-muted">memperbarui…</div>}
-      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Perubahan status per periode" right={<Legend items={[{ label: 'Occupied', kind: 'occ' }, { label: 'Vacant', kind: 'vac' }]} />}>
+          {data ? <BucketChart buckets={data.buckets} bucketMs={data.bucketMs} dark={dark} /> : <div className="h-[200px] animate-pulse rounded-lg bg-surface2" />}
+          {loading && <div className="mt-1 text-right text-xs text-muted">memperbarui…</div>}
+        </Card>
+        <Card title="Pola okupansi" right={
+          <span className="flex items-center gap-2 text-xs text-muted">Rendah
+            <span className="h-2.5 w-20 rounded-full" style={{ background: 'linear-gradient(90deg, var(--heat-low), var(--occ))' }} />Tinggi</span>}>
+          <Heatmap cells={heat} />
+        </Card>
+      </div>
 
       {device && data && <EventLog device={device} from={data.from} to={data.to} room={room || device} />}
+
+      <p className="pb-4 text-center text-xs text-muted">Waktu dalam WIB (UTC+7) · Diperbarui real-time</p>
+    </div>
+  )
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted">{label}</div>
+      <div className="mt-0.5 text-base font-bold tabular-nums">{value}</div>
     </div>
   )
 }
 
 function EventLog({ device, from, to, room }: { device: string; from: number; to: number; room: string }) {
   const [rows, setRows] = useState<EventRow[]>([])
-  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    if (!open) return
     let live = true
-    fetchEvents(device, from, to, 100).then((r) => { if (live) setRows(r.rows) })
+    fetchEvents(device, from, to, 50).then((r) => { if (live) setRows(r.rows) })
     return () => { live = false }
-  }, [open, device, from, to])
+  }, [device, from, to])
+
+  // Durasi = jarak ke event berikutnya (rows terbaru dulu); yang terbaru masih "berjalan".
+  const table = rows.filter((e) => e.is_transition).map((e, i, a) => ({
+    e, dur: i === 0 ? null : (Date.parse(a[i - 1].ts) - Date.parse(e.ts)) / 1000,
+  }))
 
   async function exportCsv() {
     setBusy(true)
@@ -183,31 +213,22 @@ function EventLog({ device, from, to, room }: { device: string; from: number; to
   }
 
   return (
-    <Card>
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium text-muted">Log event</h2>
-        <button className="btn-ghost ml-auto" onClick={() => setOpen((o) => !o)}>{open ? 'Sembunyikan' : 'Tampilkan'}</button>
-        <button className="btn-ghost" onClick={exportCsv} disabled={busy}>{busy ? 'Menyiapkan…' : 'Unduh CSV'}</button>
+    <Card title="Event terbaru" right={<button className="btn-outline" onClick={exportCsv} disabled={busy}><IconDownload size={16} />{busy ? 'Menyiapkan…' : 'Export CSV'}</button>}>
+      <div className="max-h-96 overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 bg-card text-xs text-muted"><tr><th className="py-2 pr-3 font-semibold">Waktu</th><th className="pr-3 font-semibold">Status</th><th className="font-semibold">Durasi</th></tr></thead>
+          <tbody>
+            {table.map(({ e, dur }) => (
+              <tr key={e.id} className="border-t border-line">
+                <td className="py-2.5 pr-3 font-mono text-[13px]">{wibDayTime(Date.parse(e.ts))}:{wibTimeSec(Date.parse(e.ts)).slice(-2)}{e.ts_suspect && <span title="jam perangkat tidak sinkron" className="ml-1 text-bad">!</span>}</td>
+                <td className="pr-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.status === 'occupied' ? 'bg-occ-bg text-occ-fg' : 'bg-vac-bg text-vac-fg'}`}>{e.status === 'occupied' ? 'Occupied' : 'Vacant'}</span></td>
+                <td className="text-muted">{dur === null ? 'berjalan' : fmtDuration(dur)}</td>
+              </tr>
+            ))}
+            {table.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-muted">Tidak ada event pada periode ini.</td></tr>}
+          </tbody>
+        </table>
       </div>
-      {open && (
-        <div className="mt-3 max-h-80 overflow-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 bg-card text-xs text-muted"><tr><th className="py-1 pr-3">Waktu (WIB)</th><th className="pr-3">Status</th><th className="pr-3">Dihitung</th><th>Catatan</th></tr></thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr key={e.id} className="border-t border-line">
-                  <td className="py-1 pr-3 tabular-nums">{wibDayTime(Date.parse(e.ts))}:{wibTimeSec(Date.parse(e.ts)).slice(-2)}</td>
-                  <td className={`pr-3 font-medium ${e.status === 'occupied' ? 'text-occ-fg' : 'text-vac-fg'}`}>{e.status === 'occupied' ? '● Terisi' : '○ Kosong'}</td>
-                  <td className="pr-3">{e.is_transition ? 'perubahan' : <span className="text-muted">heartbeat</span>}</td>
-                  <td className="text-xs text-bad">{e.ts_suspect && 'jam perangkat tidak sinkron'}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-muted">Tidak ada event pada periode ini.</td></tr>}
-            </tbody>
-          </table>
-          {rows.length === 100 && <p className="mt-2 text-xs text-muted">Menampilkan 100 terbaru — unduh CSV untuk semuanya.</p>}
-        </div>
-      )}
     </Card>
   )
 }

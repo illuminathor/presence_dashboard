@@ -6,6 +6,7 @@ export interface PeriodStats {
   occupied_count: number; vacant_count: number
   occupied_seconds: number; offline_seconds: number; window_seconds: number
   occupancy_rate: number | null
+  avg_session_seconds: number | null; longest_session_seconds: number | null
 }
 export interface Summary { current: PeriodStats; prev: PeriodStats }
 export interface Segment { kind: 'occupied' | 'vacant' | 'offline'; start: number; end: number }
@@ -100,4 +101,17 @@ export async function fetchEvents(device: string, from: number, to: number, limi
     const rows = await get<EventRow[]>(`/events?device=${encodeURIComponent(device)}&from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
     return { rows, error: null as Error | null }
   } catch (e) { return { rows: [] as EventRow[], error: e as Error } }
+}
+
+/** Pola okupansi 7 hari × 24 jam (WIB, Senin dulu), 4 minggu terakhir. */
+export function useHeatmap(device: string | null) {
+  const [cells, setCells] = useState<(number | null)[][] | null>(null)
+  useEffect(() => {
+    if (!device) return
+    const load = () => get<(number | null)[][]>(`/heatmap?device=${encodeURIComponent(device)}`).then(setCells).catch(() => {})
+    load()
+    const iv = setInterval(load, 5 * 60_000)
+    return () => clearInterval(iv)
+  }, [device])
+  return cells
 }

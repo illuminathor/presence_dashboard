@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, get } from '../lib/api'
 import { fmtAgo, wibTimeSec } from '../lib/time'
+import { IconEye, IconEyeOff, IconLock } from '../components/Icons'
 import { useNow } from '../lib/theme'
 
 interface Form { host: string; protocol: 'mqtt' | 'mqtts' | 'ws' | 'wss'; port: string; username: string; password: string; topic_status: string; topic_online: string }
@@ -18,8 +19,8 @@ const STEP_CLR = { pending: 'text-muted', running: 'text-brand', ok: 'text-ok', 
 
 function Section({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2"><h2 className="font-semibold">{title}</h2><div className="ml-auto">{right}</div></div>
+    <section className="rounded-2xl border border-line bg-card p-6">
+      <div className="mb-4 flex items-center gap-2"><h2 className="text-[15px] font-bold">{title}</h2><div className="ml-auto">{right}</div></div>
       {children}
     </section>
   )
@@ -48,6 +49,7 @@ export default function MqttConfig() {
   const [form, setForm] = useState<Form>(EMPTY)
   const [hasPassword, setHasPassword] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [showPw, setShowPw] = useState(false)
   const [test, setTest] = useState<TestRow | null>(null)
   const [testedKey, setTestedKey] = useState('')
   const [testing, setTesting] = useState(false)
@@ -136,15 +138,21 @@ export default function MqttConfig() {
   if (!loaded) return <p className="text-muted">Memuat…</p>
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold">Konfigurasi MQTT</h1>
-        <span className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ${badge.c}`} role="status">{badge.t}</span>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted">Pengaturan · Khusus admin</div>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight">Koneksi MQTT</h1>
+          <p className="mt-1 text-sm text-muted">Hubungkan dashboard ke broker tempat Shelly 2PM mengirim data presence.</p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${badge.c}`} role="status">{badge.t}</span>
       </div>
       {ingest?.last_error && ingest.state !== 'connected' && <div className="rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">{ingest.last_error}</div>}
       {ingest?.last_error && ingest.state === 'connected' && <div className="rounded-lg bg-occ-bg px-3 py-2 text-sm text-occ-fg">{ingest.last_error}</div>}
 
-      <Section title="Koneksi broker">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
+      <Section title="Broker & topic">
         <div className="grid gap-3 sm:grid-cols-6">
           <label className="text-sm sm:col-span-3">Host<input className="field mt-1" placeholder="mqtt.contoh.local" value={form.host} onChange={(e) => set('host', e.target.value)} /></label>
           <label className="text-sm sm:col-span-2">Protokol
@@ -155,22 +163,38 @@ export default function MqttConfig() {
           <label className="text-sm">Port<input className="field mt-1" inputMode="numeric" value={form.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></label>
           <label className="text-sm sm:col-span-3">Username <span className="text-muted">(opsional)</span><input className="field mt-1" autoComplete="off" value={form.username} onChange={(e) => set('username', e.target.value)} /></label>
           <label className="text-sm sm:col-span-3">Password <span className="text-muted">(opsional)</span>
-            <input className="field mt-1" type="password" autoComplete="new-password" placeholder={hasPassword ? '•••••• (tersimpan — kosongkan untuk tetap dipakai)' : ''} value={form.password} onChange={(e) => set('password', e.target.value)} />
+            <span className="relative mt-1 block"><input className="field pr-10" type={showPw ? 'text' : 'password'} autoComplete="new-password" placeholder={hasPassword ? '•••••• (tersimpan)' : ''} value={form.password} onChange={(e) => set('password', e.target.value)} />
+              <button type="button" aria-label={showPw ? 'Sembunyikan password' : 'Tampilkan password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted" onClick={() => setShowPw((v) => !v)}>{showPw ? <IconEyeOff size={18} /> : <IconEye size={18} />}</button></span>
           </label>
           <label className="text-sm sm:col-span-3">Topic status presence<input className="field mt-1 font-mono" value={form.topic_status} onChange={(e) => set('topic_status', e.target.value)} /></label>
           <label className="text-sm sm:col-span-3">Topic online <span className="text-muted">(opsional)</span><input className="field mt-1 font-mono" value={form.topic_online} onChange={(e) => set('topic_online', e.target.value)} /></label>
         </div>
-        <p className="mt-3 text-xs text-muted">Client ID dibuat otomatis dan QoS tetap 1. Wildcard <code>+</code> pada topic menentukan <i>device_id</i>. Password disimpan di database server (file hanya bisa dibaca pemilik) dan tidak pernah dikirim balik ke browser.</p>
+        <p className="mt-3 flex gap-1.5 text-xs text-muted"><span className="mt-0.5 shrink-0"><IconLock size={14} /></span><span>Client ID dibuat otomatis dan QoS tetap 1. Wildcard <code>+</code> pada topic menentukan <i>device_id</i>. Password disimpan di database server (file hanya bisa dibaca pemilik) dan tidak pernah dikirim balik ke browser.</span></p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button className="btn-ghost" onClick={runTest} disabled={!complete || testing}>{testing ? 'Menguji…' : 'Tes koneksi'}</button>
+          <button className="btn-outline" onClick={runTest} disabled={!complete || testing}>{testing ? 'Menguji…' : 'Tes koneksi'}</button>
           <button className="btn-primary" onClick={save} disabled={!canSave}>{saving ? 'Menyimpan…' : 'Simpan'}</button>
           {!canSave && complete && !saving && <span className="text-xs text-muted">Simpan aktif setelah tes (langkah 1–3) berhasil dengan isian ini.</span>}
         </div>
         {notice && <div role="alert" className={`mt-3 rounded-lg px-3 py-2 text-sm ${notice.ok ? 'bg-ok-bg text-ok' : 'bg-bad-bg text-bad'}`}>{notice.text}</div>}
       </Section>
 
+      <Section title="Nama ruangan">
+        {devs.length === 0 ? <p className="text-sm text-muted">Belum ada device terdeteksi.</p> : (
+          <ul className="space-y-2">
+            {devs.map((d) => (
+              <li key={d.device_id} className="flex flex-wrap items-center gap-3 text-sm">
+                <code className="w-40 truncate rounded bg-surface2 px-2 py-1 font-mono">{d.device_id}</code>
+                <input className="field !w-64" placeholder="Nama ruangan, mis. Ruang Rapat A" defaultValue={d.room_name ?? ''} onBlur={(e) => e.target.value !== (d.room_name ?? '') && renameRoom(d.device_id, e.target.value)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+      </div>
+
+      <div className="space-y-4">
       {(test || testing) && (
-        <Section title="Hasil tes">
+        <Section title="Verifikasi">
           <ol className="space-y-2">
             {(test?.steps?.length ? test.steps : [{ id: 'x', label: 'Menunggu hasil tes…', status: 'running' } as Step]).map((s) => (
               <li key={s.id} className="flex gap-3 text-sm">
@@ -188,18 +212,8 @@ export default function MqttConfig() {
         <p className="mt-2 text-xs text-muted">Pesan yang tidak sesuai format diabaikan. Hitungan dihitung sejak server terakhir dijalankan.</p>
       </Section>
 
-      <Section title="Nama ruangan">
-        {devs.length === 0 ? <p className="text-sm text-muted">Belum ada device terdeteksi.</p> : (
-          <ul className="space-y-2">
-            {devs.map((d) => (
-              <li key={d.device_id} className="flex flex-wrap items-center gap-3 text-sm">
-                <code className="w-40 truncate rounded bg-off-bg px-2 py-1">{d.device_id}</code>
-                <input className="field !w-64" placeholder="Nama ruangan, mis. Ruang Rapat A" defaultValue={d.room_name ?? ''} onBlur={(e) => e.target.value !== (d.room_name ?? '') && renameRoom(d.device_id, e.target.value)} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+      </div>
+      </div>
     </div>
   )
 }

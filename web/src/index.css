@@ -1,36 +1,53 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Token mengikuti desain (Presence — hijau). */
 :root {
-  --app: #f4f5f7; --card: #ffffff; --fg: #111827; --muted: #5b6472; --line: #e3e6ea;
-  --brand: #0f766e; --brand-fg: #ffffff;
-  --occ: #d97706; --occ-fg: #92400e; --occ-bg: #fef3c7;
-  --vac: #0d9488; --vac-fg: #0f766e; --vac-bg: #ccfbf1;
-  --off: #9ca3af; --off-fg: #4b5563; --off-bg: #e5e7eb;
-  --bad: #b91c1c; --bad-bg: #fee2e2; --ok: #15803d; --ok-bg: #dcfce7;
+  --app: #F3F7F4; --card: #FFFFFF; --surface2: #EDF2EE; --line: #E0E8E2; --field: #CBD6CF;
+  --fg: #0E1F17; --muted: #56665D;
+  --brand: #0B7A43; --brand-fg: #FFFFFF; --brand-soft: #DFF3E7;
+  --occ: #16A34A; --occ-fg: #0B6B3A; --occ-bg: #EAF7EF; --occ-line: #C7E9D4;
+  --vac: #C9D3D9; --vac-fg: #4A5A64; --vac-bg: #F0F3F5;
+  --off: #BAC5BF; --off-fg: #56665D; --off-bg: #EDF2EE;
+  --heat-low: #EEF5F0;
+  --bad: #9A3412; --bad-bg: #FFF4EC; --bad-line: #FBD5BC;
+  --warn-fg: #92400E; --warn-bg: #FFF7E6; --warn-line: #F6DDA8;
+  --ok: #0B6B3A; --ok-bg: #EAF7EF;
 }
 .dark {
-  --app: #0d1117; --card: #161b22; --fg: #e6edf3; --muted: #9aa4b2; --line: #2a313c;
-  --brand: #2dd4bf; --brand-fg: #04201c;
-  --occ: #f59e0b; --occ-fg: #fbbf24; --occ-bg: #3a2a08;
-  --vac: #2dd4bf; --vac-fg: #5eead4; --vac-bg: #0b2f2b;
-  --off: #6b7280; --off-fg: #9ca3af; --off-bg: #272d36;
-  --bad: #f87171; --bad-bg: #3b1416; --ok: #4ade80; --ok-bg: #12301c;
+  --app: #09120F; --card: #0F1B16; --surface2: #16251F; --line: #213229; --field: #2E4238;
+  --fg: #E5EFE9; --muted: #93A69B;
+  --brand: #34D17E; --brand-fg: #052016; --brand-soft: rgba(52,209,126,.14);
+  --occ: #34D17E; --occ-fg: #6BE3A2; --occ-bg: rgba(52,209,126,.10); --occ-line: rgba(52,209,126,.28);
+  --vac: #3A4A52; --vac-fg: #A9B8C1; --vac-bg: rgba(148,163,184,.08);
+  --off: #33433B; --off-fg: #93A69B; --off-bg: #16251F;
+  --heat-low: #14231D;
+  --bad: #FDBA74; --bad-bg: rgba(251,146,60,.12); --bad-line: rgba(251,146,60,.3);
+  --warn-fg: #FCD34D; --warn-bg: rgba(245,158,11,.10); --warn-line: rgba(245,158,11,.3);
+  --ok: #6BE3A2; --ok-bg: rgba(52,209,126,.10);
 }
 @theme inline {
-  --color-app: var(--app); --color-card: var(--card); --color-fg: var(--fg);
-  --color-muted: var(--muted); --color-line: var(--line);
-  --color-brand: var(--brand); --color-brand-fg: var(--brand-fg);
-  --color-occ: var(--occ); --color-occ-fg: var(--occ-fg); --color-occ-bg: var(--occ-bg);
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-app: var(--app); --color-card: var(--card); --color-surface2: var(--surface2); --color-fg: var(--fg);
+  --color-muted: var(--muted); --color-line: var(--line); --color-field: var(--field);
+  --color-brand: var(--brand); --color-brand-fg: var(--brand-fg); --color-brand-soft: var(--brand-soft);
+  --color-occ: var(--occ); --color-occ-fg: var(--occ-fg); --color-occ-bg: var(--occ-bg); --color-occ-line: var(--occ-line);
   --color-vac: var(--vac); --color-vac-fg: var(--vac-fg); --color-vac-bg: var(--vac-bg);
   --color-off: var(--off); --color-off-fg: var(--off-fg); --color-off-bg: var(--off-bg);
-  --color-bad: var(--bad); --color-bad-bg: var(--bad-bg); --color-ok: var(--ok); --color-ok-bg: var(--ok-bg);
+  --color-bad: var(--bad); --color-bad-bg: var(--bad-bg); --color-bad-line: var(--bad-line);
+  --color-warn-fg: var(--warn-fg); --color-warn-bg: var(--warn-bg); --color-warn-line: var(--warn-line);
+  --color-ok: var(--ok); --color-ok-bg: var(--ok-bg);
 }
 html { color-scheme: light; }
 html.dark { color-scheme: dark; }
-body { background: var(--app); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { background: var(--app); color: var(--fg); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
 input, select, button { font: inherit; }
-@utility field { @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand; }
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.pattern-off { background: repeating-linear-gradient(135deg, var(--off) 0 6px, transparent 6px 12px); }
+@utility field { @apply w-full rounded-xl border border-field bg-card px-3.5 py-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30; }
+@utility btn { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50; }
 @utility btn-primary { @apply btn bg-brand text-brand-fg hover:opacity-90; }
-@utility btn-ghost { @apply btn border border-line bg-card hover:bg-off-bg; }
+@utility btn-ghost { @apply btn border border-line bg-card text-fg hover:bg-surface2; }
+@utility btn-outline { @apply btn border border-brand bg-card text-brand hover:bg-brand-soft; }
+@utility card { @apply rounded-2xl border border-line bg-card; }

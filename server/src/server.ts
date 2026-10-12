@@ -7,7 +7,7 @@ import {
 } from './auth.js'
 import { bus } from './bus.js'
 import type { Db } from './db.js'
-import { getBuckets, getSummary, getTimeline } from './metrics.js'
+import { getBuckets, getHeatmap, getSummary, getTimeline } from './metrics.js'
 import type { MqttManager } from './mqttManager.js'
 import { runTest } from './tester.js'
 
@@ -117,6 +117,9 @@ export function createApp(db: Db, mqttMgr: MqttManager, webDir: string) {
       let buckets
       try { buckets = getBuckets(db, device, from, to, bucket) } catch (e) { throw bad((e as Error).message) }
       return send(res, 200, { summary: getSummary(db, device, from, to), segments: getTimeline(db, device, from, to), buckets })
+    }
+    if (method === 'GET' && path === '/heatmap') {
+      return send(res, 200, getHeatmap(db, str(q.get('device'), 'device')))
     }
     if (method === 'GET' && path === '/events') {
       const device = str(q.get('device'), 'device'), from = num(q.get('from'), 'from'), to = num(q.get('to'), 'to')

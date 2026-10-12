@@ -7,6 +7,7 @@ export interface PeriodStats {
   occupied_count: number; vacant_count: number
   occupied_seconds: number; offline_seconds: number; window_seconds: number
   occupancy_rate: number | null
+  avg_session_seconds: number | null; longest_session_seconds: number | null
 }
 export interface Segment { kind: 'occupied' | 'vacant' | 'offline'; start: number; end: number }
 export interface Bucket { start: number; occupied: number; vacant: number }
@@ -67,16 +68,20 @@ export function periodStats(db: Db, device: string, from: number, to: number, no
   const cnt = (s: string) => counts.find((c) => c.status === s)?.n ?? 0
 
   let occ = 0, off = 0
+  let sessions: Iv[] = []
   if (winMs > 0) {
     const offR = offlineRanges(db, device, from, vTo)
     off = total(offR) / 1000
-    occ = total(subtract(stateSegments(db, device, from, vTo).filter((s) => s.status === 'occupied').map((s) => s.r), offR)) / 1000
+    sessions = subtract(stateSegments(db, device, from, vTo).filter((s) => s.status === 'occupied').map((s) => s.r), offR)
+    occ = total(sessions) / 1000
   }
   const win = winMs / 1000
   return {
     occupied_count: cnt('occupied'), vacant_count: cnt('vacant'),
     occupied_seconds: Math.round(occ), offline_seconds: Math.round(off), window_seconds: Math.round(win),
     occupancy_rate: win - off > 0 ? Math.round((occ / (win - off)) * 1000) / 10 : null,
+    avg_session_seconds: sessions.length ? Math.round(occ / sessions.length) : null,
+    longest_session_seconds: sessions.length ? Math.round(Math.max(...sessions.map(([a, b]) => b - a)) / 1000) : null,
   }
 }
 
@@ -110,4 +115,27 @@ export function getBuckets(db: Db, device: string, from: number, to: number, buc
     if (b) b[r.status === 'occupied' ? 'occupied' : 'vacant']++
   }
   return out
+}
+
+const HOUR = 3600_000, WIB = 7 * HOUR
+
+/** Pola okupansi: rata-rata porsi terisi per (hari, jam WIB) selama `weeks` minggu terakhir. cells[dow][jam] ∈ [0,1] atau null (belum ada data); dow 0 = Senin. */
+export function getHeatmap(db: Db, device: string, weeks = 4, now = Date.now()): (number | null)[][] {
+  const to = now, from = Math.floor((now - weeks * 7 * 86400_000) / HOUR) * HOUR
+  const offR = offlineRanges(db, device, from, to)
+  const occ = subtract(stateSegments(db, device, from, to).filter((s) => s.status === 'occupied').map((s) => s.r), offR)
+  const num = Array.from({ length: 7 }, () => new Array<number>(24).fill(0))
+  const den = Array.from({ length: 7 }, () => new Array<number>(24).fill(0))
+  const slot = (t: number) => { const d = new Date(t + WIB); return [(d.getUTCDay() + 6) % 7, d.getUTCHours()] as const }
+  const spread = (ivs: Iv[], into: number[][]) => {
+    for (const [a, b] of ivs) {
+      for (let t = Math.floor(a / HOUR) * HOUR; t < b; t += HOUR) {
+        const ov = Math.min(b, t + HOUR) - Math.max(a, t)
+        if (ov > 0) { const [d, h] = slot(t); into[d][h] += ov }
+      }
+    }
+  }
+  spread(occ, num)
+  spread(subtract([[from, to]], offR), den) // waktu teramati (di luar offline)
+  return num.map((row, d) => row.map((v, h) => (den[d][h] > 0 ? Math.round((v / den[d][h]) * 1000) / 1000 : null)))
 }
