@@ -41,9 +41,9 @@ npm ci && npm run build
 Pasang service (sesuaikan path/user di file unit):
 
 ```bash
-sudo cp deploy/presence-ingest.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now presence-ingest
-journalctl -u presence-ingest -f
+mkdir -p ~/.config/systemd/user && cp deploy/presence-ingest.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now presence-ingest
+journalctl --user -u presence-ingest -f
 ```
 
 Batas memori: heap Node 96 MB, `MemoryMax=200M`, `CPUQuota=50%`. Ingest memakai polling
@@ -80,29 +80,34 @@ SPA ke `index.html`). Pakai HTTPS.
 `cd ingest && npm test` (parser). Logika SQL, alur ingest, dan UI sudah diuji dengan PGlite,
 broker + REST tiruan, dan Chrome headless, **belum** dengan project Supabase atau broker asli.
 
-## Deploy / update (satu perintah)
+## Deploy / update (tanpa sudo)
 
-Kode di server diambil lewat `git pull` dari `/opt/presence/src`. Setelah setup awal selesai,
-push perubahan dari laptop, lalu di server jalankan:
+Semuanya berjalan sebagai user biasa di home, tanpa `/opt` dan tanpa sudoers. Update:
+push dari laptop, lalu di server:
 
 ```bash
-sudo /opt/presence/src/deploy/deploy.sh        # web + ingest
-sudo /opt/presence/src/deploy/deploy.sh web    # hanya web
-sudo /opt/presence/src/deploy/deploy.sh ingest # hanya ingest
+~/presence_dashboard/deploy/deploy.sh          # web + ingest
+~/presence_dashboard/deploy/deploy.sh web      # hanya web
+~/presence_dashboard/deploy/deploy.sh ingest   # hanya ingest
 ```
 
-Setup awal server (sekali):
+Setup awal server (sekali; hanya 3 baris yang butuh sudo, semuanya bersifat sistem):
 
 ```bash
-sudo useradd -r -m -d /opt/presence -s /usr/sbin/nologin presence
-sudo -u presence git clone https://github.com/illuminathor/presence_dashboard.git /opt/presence/src
-sudo -u presence cp /opt/presence/src/ingest/.env.example /opt/presence/src/ingest/.env   # lalu isi
-sudo -u presence cp /opt/presence/src/web/.env.example /opt/presence/src/web/.env         # lalu isi
-sudo chmod 600 /opt/presence/src/ingest/.env
-sudo cp /opt/presence/src/deploy/presence-ingest.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable presence-ingest
-sudo cp /opt/presence/src/deploy/nginx.conf /etc/nginx/conf.d/presence.conf   # ganti server_name
+git clone https://github.com/illuminathor/presence_dashboard.git ~/presence_dashboard
+cd ~/presence_dashboard
+cp ingest/.env.example ingest/.env && chmod 600 ingest/.env   # lalu isi
+cp web/.env.example web/.env                                   # lalu isi
+mkdir -p ~/.config/systemd/user && cp deploy/presence-ingest.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable presence-ingest
+
+sudo loginctl enable-linger $USER      # service user tetap jalan setelah logout/reboot
+chmod 711 ~                            # agar nginx bisa membaca web/dist
+sudo cp deploy/nginx.conf /etc/nginx/conf.d/presence.conf   # ganti server_name dan USERNAME
 ```
 
 Lalu jalankan `deploy.sh` untuk build dan start pertama. Build web di server 1 GB memakai heap
 maksimal 512 MB; kalau sering gagal kehabisan memori, tambahkan swap 1 GB.
+Catatan: `node` harus ada di `/usr/bin` atau PATH systemd (jika memakai nvm, pasang Node dari
+NodeSource/apt saja). Batas CPU tidak dipasang karena butuh delegasi cgroup; batas memori
+(`MemoryMax`) dan heap Node tetap berlaku.
