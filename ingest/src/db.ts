@@ -20,7 +20,9 @@ async function call(path: string, init: RequestInit): Promise<unknown> {
       signal: AbortSignal.timeout(15_000),
     })
   } catch (e) {
-    throw new Error(`jaringan: ${(e as Error).message}`)
+    // undici menyembunyikan penyebab asli (ENOTFOUND, ECONNREFUSED, ...) di e.cause
+    const c = (e as { cause?: { code?: string; message?: string } }).cause
+    throw new Error(`jaringan: ${(e as Error).message}${c ? ` (${c.code ?? ''} ${c.message ?? ''})`.trimEnd() : ''}`)
   }
   const text = await res.text()
   if (!res.ok) {
