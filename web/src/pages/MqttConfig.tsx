@@ -52,6 +52,7 @@ export default function MqttConfig() {
   const [showPw, setShowPw] = useState(false)
   const [deb, setDeb] = useState('')
   const [debSaved, setDebSaved] = useState('')
+  const [debNotice, setDebNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [test, setTest] = useState<TestRow | null>(null)
   const [testedKey, setTestedKey] = useState('')
   const [testing, setTesting] = useState(false)
@@ -129,8 +130,8 @@ export default function MqttConfig() {
     try {
       const r = await api<{ debounce_seconds: number }>('PUT', '/settings', { debounce_seconds: Number(deb) })
       setDeb(String(r.debounce_seconds)); setDebSaved(String(r.debounce_seconds))
-      setNotice({ ok: true, text: 'Debounce tersimpan. Angka di dashboard langsung memakai pengaturan baru.' })
-    } catch (e) { setNotice({ ok: false, text: (e as Error).message }) }
+      setDebNotice({ ok: true, text: 'Debounce tersimpan. Angka di dashboard langsung memakai pengaturan baru.' })
+    } catch (e) { setDebNotice({ ok: false, text: (e as Error).message }) }
   }
 
   async function renameRoom(id: string, name: string) {
@@ -196,6 +197,7 @@ export default function MqttConfig() {
             <input className="field !w-24" inputMode="numeric" value={deb} onChange={(e) => setDeb(e.target.value.replace(/\D/g, ''))} />detik</label>
           <button className="btn-primary" onClick={saveDebounce} disabled={deb === '' || deb === debSaved}>Simpan</button>
         </div>
+        {debNotice && <div role="alert" className={`mt-3 rounded-lg px-3 py-2 text-sm ${debNotice.ok ? 'bg-ok-bg text-ok' : 'bg-bad-bg text-bad'}`}>{debNotice.text}</div>}
       </Section>
 
       <Section title="Nama ruangan">
