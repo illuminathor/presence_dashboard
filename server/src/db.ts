@@ -47,6 +47,10 @@ create table if not exists device_online_log (
   ts integer not null
 );
 create index if not exists online_log_device_ts on device_online_log (device_id, ts);
+create table if not exists settings (
+  key text primary key,
+  value text not null
+);
 create table if not exists mqtt_config (
   id integer primary key check (id = 1),
   host text not null,

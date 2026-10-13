@@ -29,6 +29,48 @@ export function subtract(a: Iv[], b: Iv[]): Iv[] {
 }
 const total = (ivs: Iv[]) => ivs.reduce((n, [s, e]) => n + (e - s), 0)
 
+export const DEFAULT_DEBOUNCE_S = 30
+export const MAX_DEBOUNCE_S = 3600
+
+export function getDebounceSeconds(db: Db): number {
+  const r = db.prepare("select value from settings where key = 'debounce_seconds'").get() as { value: string } | undefined
+  const n = r ? Number(r.value) : DEFAULT_DEBOUNCE_S
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, MAX_DEBOUNCE_S) : DEFAULT_DEBOUNCE_S
+}
+export function setDebounceSeconds(db: Db, sec: number) {
+  db.prepare("insert into settings (key, value) values ('debounce_seconds', ?) on conflict(key) do update set value = excluded.value").run(String(sec))
+}
+
+type Tr = { ts: number; status: 'occupied' | 'vacant' }
+
+/**
+ * Debounce: status yang bertahan kurang dari `minMs` dianggap kedipan sensor dan dilebur ke status
+ * di sekitarnya. Status terakhir (masih berjalan) tidak pernah dibuang. Data mentah tidak diubah.
+ */
+export function debounce(rows: Tr[], minMs: number): Tr[] {
+  if (minMs <= 0 || rows.length < 2) return rows
+  let cur = rows
+  for (;;) {
+    const keep = cur.filter((r, i) => i === cur.length - 1 || cur[i + 1].ts - r.ts >= minMs)
+    const merged = keep.filter((r, i) => i === 0 || r.status !== keep[i - 1].status)
+    if (merged.length === cur.length) return merged
+    cur = merged
+  }
+}
+
+/** Transisi (sudah di-debounce) untuk [from, to): termasuk satu baris dasar sebelum `from` bila ada. */
+export function transitions(db: Db, device: string, from: number, to: number): Tr[] {
+  const minMs = getDebounceSeconds(db) * 1000
+  const before = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts < ? order by ts desc, id desc limit 50')
+    .all(device, from) as unknown as Tr[]
+  const rest = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts >= ? and ts < ? order by ts, id')
+    .all(device, from, to) as unknown as Tr[]
+  const all = debounce([...before.reverse(), ...rest], minMs)
+  const i = all.findIndex((r) => r.ts >= from)
+  const start = i === -1 ? all.length - 1 : i - 1
+  return all.slice(Math.max(start, 0))
+}
+
 /** Rentang offline yang beririsan dengan [from, to). */
 export function offlineRanges(db: Db, device: string, from: number, to: number): Iv[] {
   const base = db.prepare('select ts, online from device_online_log where device_id = ? and ts <= ? order by ts desc, id desc limit 1')
@@ -47,11 +89,7 @@ export function offlineRanges(db: Db, device: string, from: number, to: number):
 
 /** Interval status (dari transisi) yang dipotong ke [from, to). Status awal = transisi terakhir sebelum from. */
 export function stateSegments(db: Db, device: string, from: number, to: number): { status: 'occupied' | 'vacant'; r: Iv }[] {
-  const base = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts < ? order by ts desc, id desc limit 1')
-    .get(device, from) as { ts: number; status: 'occupied' | 'vacant' } | undefined
-  const rest = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts >= ? and ts < ? order by ts, id')
-    .all(device, from, to) as unknown as { ts: number; status: 'occupied' | 'vacant' }[]
-  const rows = base ? [base, ...rest] : rest
+  const rows = transitions(db, device, from, to)
   const out: { status: 'occupied' | 'vacant'; r: Iv }[] = []
   rows.forEach((r, i) => {
     const s = Math.max(r.ts, from), e = Math.min(rows[i + 1]?.ts ?? to, to)
@@ -63,9 +101,8 @@ export function stateSegments(db: Db, device: string, from: number, to: number):
 export function periodStats(db: Db, device: string, from: number, to: number, now = Date.now()): PeriodStats {
   const vTo = Math.min(to, now)
   const winMs = Math.max(vTo - from, 0)
-  const counts = db.prepare('select status, count(*) as n from events where device_id = ? and is_transition = 1 and ts >= ? and ts < ? group by status')
-    .all(device, from, to) as unknown as { status: string; n: number }[]
-  const cnt = (s: string) => counts.find((c) => c.status === s)?.n ?? 0
+  const tr = transitions(db, device, from, to).filter((r) => r.ts >= from && r.ts < to)
+  const cnt = (s: string) => tr.filter((r) => r.status === s).length
 
   let occ = 0, off = 0
   let sessions: Iv[] = []
@@ -108,8 +145,7 @@ export function getBuckets(db: Db, device: string, from: number, to: number, buc
   if (!(bucketMs >= 60_000) || (to - from) / bucketMs > 500) throw new Error('bucket tidak valid')
   const out: Bucket[] = []
   for (let t = from; t < to; t += bucketMs) out.push({ start: t, occupied: 0, vacant: 0 })
-  const rows = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts >= ? and ts < ?')
-    .all(device, from, to) as unknown as { ts: number; status: string }[]
+  const rows = transitions(db, device, from, to).filter((r) => r.ts >= from && r.ts < to)
   for (const r of rows) {
     const b = out[Math.floor((r.ts - from) / bucketMs)]
     if (b) b[r.status === 'occupied' ? 'occupied' : 'vacant']++

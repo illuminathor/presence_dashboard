@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { openDb } from './db.js'
 import { ingestEvent, setDeviceOnline } from './ingest.js'
-import { getBuckets, getSummary, getTimeline, subtract } from './metrics.js'
+import { debounce, getBuckets, getSummary, getTimeline, setDebounceSeconds, subtract } from './metrics.js'
 
 const H = 3_600_000
 const T0 = Date.UTC(2026, 9, 12, 0, 0, 0)
@@ -79,4 +79,34 @@ test('buckets', () => {
   const b = getBuckets(db, 'a', T0, T0 + 4 * H, H)
   assert.deepEqual(b.map((x) => [x.occupied, x.vacant]), [[1, 0], [0, 0], [0, 1], [0, 0]])
   assert.throws(() => getBuckets(db, 'a', T0, T0 + 4 * H, 1000))
+})
+
+test('debounce: kedipan singkat dilebur, status terakhir dipertahankan', () => {
+  const o = 'occupied' as const, v = 'vacant' as const
+  const r = (s: number, status: typeof o | typeof v) => ({ ts: s * 1000, status })
+  // occupied 0s, vacant blip 40s (5 dtk), occupied lagi 45s, vacant 100s
+  assert.deepEqual(debounce([r(0, o), r(40, v), r(45, o), r(100, v)], 30_000), [r(0, o), r(100, v)])
+  // status terakhir (masih berjalan) tidak dibuang walau baru sebentar
+  assert.deepEqual(debounce([r(0, o), r(100, v)], 30_000), [r(0, o), r(100, v)])
+  // kosong 5 dtk lalu terisi lagi = kedipan, jadi satu sesi terisi
+  assert.deepEqual(debounce([r(0, o), r(100, v), r(105, o)], 30_000), [r(0, o)])
+  // 0 = mati
+  assert.equal(debounce([r(0, o), r(1, v), r(2, o)], 0).length, 3)
+})
+
+test('debounce memengaruhi hitungan dan durasi; diatur lewat settings', () => {
+  const db = mk()
+  const S = 1000
+  ingestEvent(db, 'a', T0 + 1 * H, 'occupied', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 1 * H + 600 * S, 'vacant', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 1 * H + 610 * S, 'occupied', {}, false, NOW) // vacant hanya 10 dtk
+  ingestEvent(db, 'a', T0 + 2 * H, 'vacant', {}, false, NOW)
+  setDebounceSeconds(db, 0)
+  let s = getSummary(db, 'a', T0, T0 + 4 * H, NOW).current
+  assert.equal(s.occupied_count, 2); assert.equal(s.vacant_count, 2)
+  setDebounceSeconds(db, 30)
+  s = getSummary(db, 'a', T0, T0 + 4 * H, NOW).current
+  assert.equal(s.occupied_count, 1); assert.equal(s.vacant_count, 1)
+  assert.equal(s.occupied_seconds, 3600); assert.equal(s.longest_session_seconds, 3600)
+  assert.equal(getTimeline(db, 'a', T0, T0 + 4 * H, NOW).filter((x) => x.kind === 'occupied').length, 1)
 })

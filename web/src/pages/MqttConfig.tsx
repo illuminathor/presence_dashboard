@@ -50,6 +50,8 @@ export default function MqttConfig() {
   const [hasPassword, setHasPassword] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const [deb, setDeb] = useState('')
+  const [debSaved, setDebSaved] = useState('')
   const [test, setTest] = useState<TestRow | null>(null)
   const [testedKey, setTestedKey] = useState('')
   const [testing, setTesting] = useState(false)
@@ -69,6 +71,7 @@ export default function MqttConfig() {
       setLoaded(true)
     }).catch(() => setLoaded(true))
     get<Dev[]>('/devices').then(setDevs).catch(() => {})
+    get<{ debounce_seconds: number }>('/settings').then((r) => { setDeb(String(r.debounce_seconds)); setDebSaved(String(r.debounce_seconds)) }).catch(() => {})
   }, [])
 
   // status ingest (badge + pesan live), polling 3 dtk
@@ -120,6 +123,14 @@ export default function MqttConfig() {
     if (form.password) setHasPassword(true)
     set('password', '')
     setNotice({ ok: true, text: 'Tersimpan dan terhubung ke broker. Bila config baru gagal, config lama tetap dipakai.' })
+  }
+
+  async function saveDebounce() {
+    try {
+      const r = await api<{ debounce_seconds: number }>('PUT', '/settings', { debounce_seconds: Number(deb) })
+      setDeb(String(r.debounce_seconds)); setDebSaved(String(r.debounce_seconds))
+      setNotice({ ok: true, text: 'Debounce tersimpan. Angka di dashboard langsung memakai pengaturan baru.' })
+    } catch (e) { setNotice({ ok: false, text: (e as Error).message }) }
   }
 
   async function renameRoom(id: string, name: string) {
@@ -176,6 +187,15 @@ export default function MqttConfig() {
           {!canSave && complete && !saving && <span className="text-xs text-muted">Simpan aktif setelah tes (langkah 1–3) berhasil dengan isian ini.</span>}
         </div>
         {notice && <div role="alert" className={`mt-3 rounded-lg px-3 py-2 text-sm ${notice.ok ? 'bg-ok-bg text-ok' : 'bg-bad-bg text-bad'}`}>{notice.text}</div>}
+      </Section>
+
+      <Section title="Debounce sensor">
+        <p className="mb-3 text-sm text-muted">Status yang bertahan kurang dari durasi ini dianggap kedipan sensor dan dilebur ke status di sekitarnya, jadi tidak menambah hitungan &quot;jadi terisi/kosong&quot; dan tidak memecah sesi. Data mentah tidak diubah; isi 0 untuk mematikan.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">Minimal
+            <input className="field !w-24" inputMode="numeric" value={deb} onChange={(e) => setDeb(e.target.value.replace(/\D/g, ''))} />detik</label>
+          <button className="btn-primary" onClick={saveDebounce} disabled={deb === '' || deb === debSaved}>Simpan</button>
+        </div>
       </Section>
 
       <Section title="Nama ruangan">

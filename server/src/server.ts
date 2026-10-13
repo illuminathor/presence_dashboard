@@ -7,7 +7,7 @@ import {
 } from './auth.js'
 import { bus } from './bus.js'
 import type { Db } from './db.js'
-import { getBuckets, getHeatmap, getSummary, getTimeline } from './metrics.js'
+import { getBuckets, getHeatmap, getSummary, getTimeline, getDebounceSeconds, setDebounceSeconds, MAX_DEBOUNCE_S } from './metrics.js'
 import type { MqttManager } from './mqttManager.js'
 import { runTest } from './tester.js'
 
@@ -137,6 +137,19 @@ export function createApp(db: Db, mqttMgr: MqttManager, webDir: string) {
       const hb = setInterval(() => res.write(': ping\n\n'), 25_000)
       req.on('close', () => { bus.off('change', onChange); clearInterval(hb) })
       return
+    }
+
+    // ── pengaturan umum (admin) ──
+    if (path === '/settings') {
+      admin()
+      if (method === 'GET') return send(res, 200, { debounce_seconds: getDebounceSeconds(db) })
+      if (method === 'PUT') {
+        const b = await readJson(req)
+        const n = Number(b.debounce_seconds)
+        if (!Number.isInteger(n) || n < 0 || n > MAX_DEBOUNCE_S) throw bad(`Debounce harus bilangan bulat 0–${MAX_DEBOUNCE_S} detik`)
+        setDebounceSeconds(db, n)
+        return send(res, 200, { debounce_seconds: n })
+      }
     }
 
     // ── konfigurasi MQTT (admin) ──
