@@ -1,0 +1,9 @@
+# systemd USER service: ~/.config/systemd/user/presence-autodeploy.service (dipicu oleh .timer)
+[Unit]
+Description=Auto-deploy Presence Monitor bila ada commit baru
+
+[Service]
+Type=oneshot
+# login shell supaya node/npm (mis. dari nvm) ada di PATH
+ExecStart=/usr/bin/env bash -lc '%h/presence_dashboard/deploy/autodeploy.sh'
+TimeoutStartSec=900

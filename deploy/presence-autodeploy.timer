@@ -1,0 +1,11 @@
+# systemd USER timer: ~/.config/systemd/user/presence-autodeploy.timer
+[Unit]
+Description=Cek commit baru tiap menit
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

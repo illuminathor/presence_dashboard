@@ -9,3 +9,4 @@ server/data/
 *.log
 .DS_Store
 .claude/
+.autodeploy-failed

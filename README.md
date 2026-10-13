@@ -61,6 +61,20 @@ Push dari laptop, lalu di server: `~/presence_dashboard/deploy/deploy.sh`
 (git pull → build web → tes + build server → restart). Build web memakai heap maksimal 512 MB;
 kalau kehabisan memori di server 1 GB, tambahkan swap 1 GB.
 
+### Auto-deploy (opsional, seperti Vercel)
+
+Server mengecek `origin/main` tiap menit; ada commit baru → `deploy.sh` jalan otomatis. Cukup `git push` dari laptop.
+
+```bash
+cd ~/presence_dashboard
+cp deploy/presence-autodeploy.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now presence-autodeploy.timer
+journalctl --user -u presence-autodeploy -f     # lihat log deploy
+```
+
+Bila tes/build gagal, versi lama tetap jalan dan commit itu tidak dicoba ulang sampai ada commit baru.
+Matikan: `systemctl --user disable --now presence-autodeploy.timer`.
+
 ## User & password
 
 - Akun tidak bisa mendaftar sendiri; admin membuatnya di menu **User** (atau lewat CLI).
