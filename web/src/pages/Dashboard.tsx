@@ -80,13 +80,13 @@ export default function Dashboard() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">{room || device || '…'}</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">{room || (device === 'default' ? 'Ruangan' : device) || '…'}</h1>
           <p className="mt-1 text-sm text-muted">
             {devices && devices.length > 1 ? (
               <select className="field !w-auto !py-1" value={device ?? ''} onChange={(e) => setParam((p) => p.set('d', e.target.value))} aria-label="Pilih ruangan">
                 {devices.map((d) => <option key={d.device_id} value={d.device_id}>{d.room_name || d.device_id}</option>)}
               </select>
-            ) : <span className="font-mono text-xs">{device}</span>}
+            ) : device && device !== 'default' && room ? <span className="font-mono text-xs">{device}</span> : <span>Radar presence 24 GHz</span>}
           </p>
         </div>
         <div className="flex flex-wrap gap-1 rounded-xl bg-surface2 p-1" role="group" aria-label="Time window">

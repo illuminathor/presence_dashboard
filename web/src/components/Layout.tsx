@@ -13,6 +13,7 @@ export default function Layout() {
   const { dark, toggle } = useTheme()
   const devices = useDevices()
   const dev = devices?.[0]?.device_id ?? null
+  const devName = devices?.[0]?.room_name || (dev === 'default' ? 'Sensor' : dev)
   const ds = useDeviceStatus(dev)
   const now = useNow(5000)
   const link = ({ isActive }: { isActive: boolean }) =>
@@ -34,7 +35,7 @@ export default function Layout() {
           {dev && ds && (
             <div className="hidden items-center gap-2 rounded-full border border-line px-3 py-2 text-[13px] lg:flex">
               <span className={`h-2 w-2 rounded-full ${ds.online ? 'bg-occ' : 'bg-off'}`} aria-hidden />
-              <span className="font-semibold">{dev} · {ds.online ? 'Online' : 'Offline'}</span>
+              <span className="font-semibold">{devName} · {ds.online ? 'Online' : 'Offline'}</span>
               {ds.last_seen && <span className="text-muted">{fmtAgo(now - Date.parse(ds.last_seen))}</span>}
             </div>
           )}
