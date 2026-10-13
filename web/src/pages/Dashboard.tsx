@@ -219,9 +219,10 @@ function EventLog({ device, from, to, room }: { device: string; from: number; to
           <thead className="sticky top-0 bg-card text-xs text-muted"><tr><th className="py-2 pr-3 font-semibold">Waktu</th><th className="pr-3 font-semibold">Status</th><th className="font-semibold">Durasi</th></tr></thead>
           <tbody>
             {rows.map((e) => (
-              <tr key={e.ts} className="border-t border-line">
+              <tr key={e.ts} className={`border-t border-line ${e.debounced ? 'opacity-70' : ''}`}>
                 <td className="py-2.5 pr-3 font-mono text-[13px]">{wibDayTime(e.ts)}:{wibTimeSec(e.ts).slice(-2)}</td>
-                <td className="pr-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.status === 'occupied' ? 'bg-occ-bg text-occ-fg' : 'bg-vac-bg text-vac-fg'}`}>{e.status === 'occupied' ? 'Occupied' : 'Vacant'}</span></td>
+                <td className="pr-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.status === 'occupied' ? 'bg-occ-bg text-occ-fg' : 'bg-vac-bg text-vac-fg'}`}>{e.status === 'occupied' ? 'Occupied' : 'Vacant'}</span>
+                  {e.debounced && <span title="Status singkat yang dianggap kedipan sensor (debounce), tidak dihitung di statistik" className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-muted">kedipan</span>}</td>
                 <td className="text-muted">{e.duration_s === null ? 'berjalan' : fmtDuration(e.duration_s)}</td>
               </tr>
             ))}

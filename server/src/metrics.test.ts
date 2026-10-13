@@ -118,6 +118,17 @@ test('daftar transisi: terbaru dulu, durasi ke perubahan berikutnya, pagination'
   ingestEvent(db, 'a', T0 + 4 * H, 'occupied', {}, false, NOW)
   const r = getTransitionList(db, 'a', T0, T0 + 8 * H, 2, 0)
   assert.equal(r.total, 3)
-  assert.deepEqual(r.rows.map((x) => [x.status, x.duration_s]), [['occupied', null], ['vacant', 7200]])
+  assert.deepEqual(r.rows.map((x) => [x.status, x.duration_s, x.debounced]), [['occupied', null, false], ['vacant', 7200, false]])
   assert.deepEqual(getTransitionList(db, 'a', T0, T0 + 8 * H, 2, 2).rows.map((x) => [x.status, x.duration_s]), [['occupied', 3600]])
+})
+
+test('daftar transisi menampilkan kedipan mentah dan menandainya', () => {
+  const db = mk()
+  ingestEvent(db, 'a', T0 + 1 * H, 'occupied', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 2 * H, 'vacant', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 2 * H + 5000, 'occupied', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 3 * H, 'vacant', {}, false, NOW)
+  const r = getTransitionList(db, 'a', T0, T0 + 8 * H, 10, 0)
+  assert.equal(r.total, 4)
+  assert.deepEqual(r.rows.map((x) => [x.status, x.debounced]), [['vacant', false], ['occupied', true], ['vacant', true], ['occupied', false]])
 })

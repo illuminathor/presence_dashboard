@@ -153,13 +153,18 @@ export function getBuckets(db: Db, device: string, from: number, to: number, buc
   return out
 }
 
-export interface TransitionRow { ts: number; status: 'occupied' | 'vacant'; duration_s: number | null }
+export interface TransitionRow { ts: number; status: 'occupied' | 'vacant'; duration_s: number | null; debounced: boolean }
 
-/** Daftar perubahan status (sudah di-debounce) pada [from, to), terbaru dulu. duration_s = sampai perubahan berikutnya; null = masih berjalan. */
+/**
+ * Semua perubahan status mentah pada [from, to), terbaru dulu (untuk mencari anomali). duration_s = sampai perubahan
+ * berikutnya; null = masih berjalan. debounced = true bila perubahan ini dianggap kedipan dan dilebur di statistik.
+ */
 export function getTransitionList(db: Db, device: string, from: number, to: number, limit: number, offset: number): { total: number; rows: TransitionRow[] } {
-  const all = transitions(db, device, from, Number.MAX_SAFE_INTEGER)
-  const list = all.map((r, i) => ({ ts: r.ts, status: r.status, duration_s: all[i + 1] ? Math.round((all[i + 1].ts - r.ts) / 1000) : null }))
-    .filter((r) => r.ts >= from && r.ts < to).reverse()
+  const raw = db.prepare('select ts, status from events where device_id = ? and is_transition = 1 and ts >= ? order by ts, id')
+    .all(device, from) as unknown as Tr[]
+  const kept = new Set(transitions(db, device, from, Number.MAX_SAFE_INTEGER).map((r) => r.ts))
+  const list = raw.map((r, i) => ({ ts: r.ts, status: r.status, duration_s: raw[i + 1] ? Math.round((raw[i + 1].ts - r.ts) / 1000) : null, debounced: !kept.has(r.ts) }))
+    .filter((r) => r.ts < to).reverse()
   return { total: list.length, rows: list.slice(offset, offset + limit) }
 }
 
