@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { openDb } from './db.js'
 import { ingestEvent, setDeviceOnline } from './ingest.js'
-import { debounce, getBuckets, getSummary, getTimeline, setDebounceSeconds, subtract } from './metrics.js'
+import { debounce, getTransitionList, getBuckets, getSummary, getTimeline, setDebounceSeconds, subtract } from './metrics.js'
 
 const H = 3_600_000
 const T0 = Date.UTC(2026, 9, 12, 0, 0, 0)
@@ -109,4 +109,15 @@ test('debounce memengaruhi hitungan dan durasi; diatur lewat settings', () => {
   assert.equal(s.occupied_count, 1); assert.equal(s.vacant_count, 1)
   assert.equal(s.occupied_seconds, 3600); assert.equal(s.longest_session_seconds, 3600)
   assert.equal(getTimeline(db, 'a', T0, T0 + 4 * H, NOW).filter((x) => x.kind === 'occupied').length, 1)
+})
+
+test('daftar transisi: terbaru dulu, durasi ke perubahan berikutnya, pagination', () => {
+  const db = mk()
+  ingestEvent(db, 'a', T0 + 1 * H, 'occupied', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 2 * H, 'vacant', {}, false, NOW)
+  ingestEvent(db, 'a', T0 + 4 * H, 'occupied', {}, false, NOW)
+  const r = getTransitionList(db, 'a', T0, T0 + 8 * H, 2, 0)
+  assert.equal(r.total, 3)
+  assert.deepEqual(r.rows.map((x) => [x.status, x.duration_s]), [['occupied', null], ['vacant', 7200]])
+  assert.deepEqual(getTransitionList(db, 'a', T0, T0 + 8 * H, 2, 2).rows.map((x) => [x.status, x.duration_s]), [['occupied', 3600]])
 })

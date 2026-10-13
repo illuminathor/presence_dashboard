@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchEvents, useDashboard, useDeviceStatus, useDevices, useHeatmap, type EventRow, type PeriodStats } from '../lib/data'
+import { fetchEvents, fetchTransitions, useDashboard, useDeviceStatus, useDevices, useHeatmap, type EventRow, type PeriodStats, type TransitionRow } from '../lib/data'
 import { PRESETS, fmtDuration, fromWibInput, toWibInput, windowFromParams, wibDayTime, wibFull, wibTime, wibTimeSec, type PresetKey } from '../lib/time'
 import { useNow, useTheme } from '../lib/theme'
 import { BucketChart, Heatmap, Legend, TimelineBar } from '../components/Charts'
@@ -164,7 +164,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {device && data && <EventLog device={device} from={data.from} to={data.to} room={room || device} />}
+      {device && data && <EventLog key={`${device}-${spec.preset ?? 'c'}-${spec.preset ? spec.to - spec.from : spec.from}`} device={device} from={data.from} to={data.to} room={room || device} />}
 
       <p className="pb-4 text-center text-xs text-muted">Waktu dalam WIB (UTC+7) · Diperbarui real-time</p>
     </div>
@@ -181,18 +181,18 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function EventLog({ device, from, to, room }: { device: string; from: number; to: number; room: string }) {
-  const [rows, setRows] = useState<EventRow[]>([])
+  const [rows, setRows] = useState<TransitionRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const [size, setSize] = useState(10)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     let live = true
-    fetchEvents(device, from, to, 50).then((r) => { if (live) setRows(r.rows) })
+    fetchTransitions(device, from, to, size, page * size).then((r) => { if (live) { setRows(r.rows); setTotal(r.total) } })
     return () => { live = false }
-  }, [device, from, to])
-
-  // Durasi = jarak ke event berikutnya (rows terbaru dulu); yang terbaru masih "berjalan".
-  const table = rows.filter((e) => e.is_transition).map((e, i, a) => ({
-    e, dur: i === 0 ? null : (Date.parse(a[i - 1].ts) - Date.parse(e.ts)) / 1000,
-  }))
+  }, [device, from, to, page, size])
+  const pages = Math.max(1, Math.ceil(total / size))
+  const cur = Math.min(page, pages - 1)
 
   async function exportCsv() {
     setBusy(true)
@@ -214,21 +214,34 @@ function EventLog({ device, from, to, room }: { device: string; from: number; to
 
   return (
     <Card title="Event terbaru" right={<button className="btn-outline" onClick={exportCsv} disabled={busy}><IconDownload size={16} />{busy ? 'Menyiapkan…' : 'Export CSV'}</button>}>
-      <div className="max-h-96 overflow-auto">
+      <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 bg-card text-xs text-muted"><tr><th className="py-2 pr-3 font-semibold">Waktu</th><th className="pr-3 font-semibold">Status</th><th className="font-semibold">Durasi</th></tr></thead>
           <tbody>
-            {table.map(({ e, dur }) => (
-              <tr key={e.id} className="border-t border-line">
-                <td className="py-2.5 pr-3 font-mono text-[13px]">{wibDayTime(Date.parse(e.ts))}:{wibTimeSec(Date.parse(e.ts)).slice(-2)}{e.ts_suspect && <span title="jam perangkat tidak sinkron" className="ml-1 text-bad">!</span>}</td>
+            {rows.map((e) => (
+              <tr key={e.ts} className="border-t border-line">
+                <td className="py-2.5 pr-3 font-mono text-[13px]">{wibDayTime(e.ts)}:{wibTimeSec(e.ts).slice(-2)}</td>
                 <td className="pr-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.status === 'occupied' ? 'bg-occ-bg text-occ-fg' : 'bg-vac-bg text-vac-fg'}`}>{e.status === 'occupied' ? 'Occupied' : 'Vacant'}</span></td>
-                <td className="text-muted">{dur === null ? 'berjalan' : fmtDuration(dur)}</td>
+                <td className="text-muted">{e.duration_s === null ? 'berjalan' : fmtDuration(e.duration_s)}</td>
               </tr>
             ))}
-            {table.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-muted">Tidak ada event pada periode ini.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-muted">Tidak ada event pada periode ini.</td></tr>}
           </tbody>
         </table>
       </div>
+      {total > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-sm text-muted">
+          <span>{cur * size + 1}–{Math.min((cur + 1) * size, total)} dari {total} perubahan</span>
+          <div className="flex items-center gap-2">
+            <select className="field !w-auto !py-1" aria-label="Baris per halaman" value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0) }}>
+              {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / halaman</option>)}
+            </select>
+            <button className="btn-outline !min-h-9 !px-3" disabled={cur === 0} onClick={() => setPage(cur - 1)}>Sebelumnya</button>
+            <span className="tabular-nums">{cur + 1} / {pages}</span>
+            <button className="btn-outline !min-h-9 !px-3" disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Berikutnya</button>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

@@ -115,3 +115,12 @@ export function useHeatmap(device: string | null) {
   }, [device])
   return cells
 }
+
+export interface TransitionRow { ts: number; status: 'occupied' | 'vacant'; duration_s: number | null }
+
+/** Perubahan status (sudah di-debounce), terbaru dulu, per halaman. */
+export async function fetchTransitions(device: string, from: number, to: number, limit: number, offset: number) {
+  try {
+    return await get<{ total: number; rows: TransitionRow[] }>(`/transitions?device=${encodeURIComponent(device)}&from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
+  } catch { return { total: 0, rows: [] as TransitionRow[] } }
+}

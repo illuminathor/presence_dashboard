@@ -7,7 +7,7 @@ import {
 } from './auth.js'
 import { bus } from './bus.js'
 import type { Db } from './db.js'
-import { getBuckets, getHeatmap, getSummary, getTimeline, getDebounceSeconds, setDebounceSeconds, MAX_DEBOUNCE_S } from './metrics.js'
+import { getBuckets, getHeatmap, getSummary, getTimeline, getDebounceSeconds, setDebounceSeconds, MAX_DEBOUNCE_S, getTransitionList } from './metrics.js'
 import type { MqttManager } from './mqttManager.js'
 import { runTest } from './tester.js'
 
@@ -120,6 +120,11 @@ export function createApp(db: Db, mqttMgr: MqttManager, webDir: string) {
     }
     if (method === 'GET' && path === '/heatmap') {
       return send(res, 200, getHeatmap(db, str(q.get('device'), 'device')))
+    }
+    if (method === 'GET' && path === '/transitions') {
+      const device = str(q.get('device'), 'device'), from = num(q.get('from'), 'from'), to = num(q.get('to'), 'to')
+      const limit = Math.min(Math.max(num(q.get('limit') ?? '10', 'limit'), 1), 200), offset = Math.max(num(q.get('offset') ?? '0', 'offset'), 0)
+      return send(res, 200, getTransitionList(db, device, from, to, limit, offset))
     }
     if (method === 'GET' && path === '/events') {
       const device = str(q.get('device'), 'device'), from = num(q.get('from'), 'from'), to = num(q.get('to'), 'to')

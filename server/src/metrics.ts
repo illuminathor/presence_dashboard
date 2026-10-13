@@ -153,6 +153,16 @@ export function getBuckets(db: Db, device: string, from: number, to: number, buc
   return out
 }
 
+export interface TransitionRow { ts: number; status: 'occupied' | 'vacant'; duration_s: number | null }
+
+/** Daftar perubahan status (sudah di-debounce) pada [from, to), terbaru dulu. duration_s = sampai perubahan berikutnya; null = masih berjalan. */
+export function getTransitionList(db: Db, device: string, from: number, to: number, limit: number, offset: number): { total: number; rows: TransitionRow[] } {
+  const all = transitions(db, device, from, Number.MAX_SAFE_INTEGER)
+  const list = all.map((r, i) => ({ ts: r.ts, status: r.status, duration_s: all[i + 1] ? Math.round((all[i + 1].ts - r.ts) / 1000) : null }))
+    .filter((r) => r.ts >= from && r.ts < to).reverse()
+  return { total: list.length, rows: list.slice(offset, offset + limit) }
+}
+
 const HOUR = 3600_000, WIB = 7 * HOUR
 
 /** Pola okupansi: rata-rata porsi terisi per (hari, jam WIB) selama `weeks` minggu terakhir. cells[dow][jam] ∈ [0,1] atau null (belum ada data); dow 0 = Senin. */
