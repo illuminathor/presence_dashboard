@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Chart, { cssVar, type EOption } from './Chart'
 import type { Bucket, Segment } from '../lib/data'
 import { fmtDuration, wibDay, wibDayTime, wibTime } from '../lib/time'
@@ -41,15 +41,35 @@ export function TimelineBar({ segments, from, to, live }: { segments: Segment[];
     return i === 0 || span > 36 * 3600e3 ? wibDayTime(t) : wibTime(t)
   })
   const name = { occupied: 'Occupied', vacant: 'Vacant', offline: 'Offline', none: 'Tanpa data' } as const
+  const dot = { occupied: 'bg-occ', vacant: 'bg-vac', offline: 'pattern-off border border-off', none: 'bg-surface2' } as const
+
+  const wrap = useRef<HTMLDivElement>(null)
+  const [tip, setTip] = useState<{ i: number; x: number } | null>(null)
+  const show = (i: number, el: HTMLElement) => {
+    const w = wrap.current!.getBoundingClientRect(), r = el.getBoundingClientRect()
+    setTip({ i, x: Math.min(Math.max(r.left - w.left + r.width / 2, 90), w.width - 90) })
+  }
+  const p = tip ? parts[tip.i] : null
+  const sameDay = p ? wibDay(p.start) === wibDay(p.end) : true
+  const pEnd = p && live && p.end >= end ? 'sekarang' : p ? (sameDay ? wibTime(p.end) : wibDayTime(p.end)) : ''
 
   return (
     <div>
-      <div role="img" aria-label="Timeline status occupied, vacant, dan offline" className="flex h-12 gap-0.5 overflow-hidden rounded-[10px]">
-        {parts.map((p, i) => (
-          <div key={i} title={`${name[p.kind]} · ${wibDayTime(p.start)} – ${wibDayTime(p.end)} (${fmtDuration((p.end - p.start) / 1000)})`}
-            style={{ flex: `${p.end - p.start} 1 0`, minWidth: 3 }}
-            className={p.kind === 'occupied' ? 'bg-occ' : p.kind === 'vacant' ? 'bg-vac' : p.kind === 'offline' ? 'pattern-off' : 'bg-surface2'} />
-        ))}
+      <div ref={wrap} className="relative" onMouseLeave={() => setTip(null)}>
+        <div role="img" aria-label="Timeline status occupied, vacant, dan offline" className="flex h-12 gap-0.5 overflow-hidden rounded-[10px]">
+          {parts.map((q, i) => (
+            <div key={i} onMouseEnter={(e) => show(i, e.currentTarget)} onClick={(e) => show(i, e.currentTarget)}
+              style={{ flex: `${q.end - q.start} 1 0`, minWidth: 3 }}
+              className={`${q.kind === 'occupied' ? 'bg-occ' : q.kind === 'vacant' ? 'bg-vac' : q.kind === 'offline' ? 'pattern-off' : 'bg-surface2'} ${tip?.i === i ? 'brightness-110 ring-2 ring-inset ring-fg/40' : ''}`} />
+          ))}
+        </div>
+        {p && tip && (
+          <div role="tooltip" className="pointer-events-none absolute bottom-full z-10 mb-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-line bg-card px-3 py-2 text-xs shadow-lg" style={{ left: tip.x }}>
+            <div className="flex items-center gap-1.5 font-bold"><span className={`h-2.5 w-2.5 rounded-[3px] ${dot[p.kind]}`} />{name[p.kind]}</div>
+            <div className="mt-1 font-mono text-[12px]">{sameDay ? wibTime(p.start) : wibDayTime(p.start)} – {pEnd} WIB</div>
+            <div className="text-muted">Durasi {fmtDuration(((live && p.end >= end ? Math.min(p.end, Date.now()) : p.end) - p.start) / 1000)}</div>
+          </div>
+        )}
       </div>
       <div className="mt-3 flex justify-between font-mono text-xs text-muted">{ticks.map((t, i) => <span key={i}>{t}</span>)}</div>
     </div>
