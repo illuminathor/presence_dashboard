@@ -36,7 +36,7 @@ function CountCard({ kind, cur, prev }: { kind: 'occupied' | 'vacant'; cur: Peri
         <span className={`h-2.5 w-2.5 rounded-full ${kind === 'occupied' ? 'bg-occ' : 'bg-vac'}`} />
         {kind === 'occupied' ? 'Jadi Occupied' : 'Jadi Vacant'}
       </div>
-      <div className="mt-2 text-[40px] font-extrabold leading-none tabular-nums">{n ?? '–'}</div>
+      <div className="mt-2 text-[30px] font-extrabold leading-none sm:text-[40px] tabular-nums">{n ?? '–'}</div>
       <div className="mt-2 text-xs">{n !== null && <Delta cur={n} prev={p} />}</div>
     </Card>
   )
@@ -135,7 +135,7 @@ export default function Dashboard() {
         <CountCard kind="vacant" cur={cur} prev={prev} />
         <Card>
           <div className="text-sm font-semibold text-muted">Occupancy rate</div>
-          <div className="mt-2 text-[40px] font-extrabold leading-none tabular-nums">{usedPct === null ? '–' : `${usedPct}%`}</div>
+          <div className="mt-2 text-[30px] font-extrabold leading-none sm:text-[40px] tabular-nums">{usedPct === null ? '–' : `${usedPct}%`}</div>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface2"><div className="h-full rounded-full bg-occ" style={{ width: `${usedPct ?? 0}%` }} /></div>
           <div className="mt-2 text-xs text-muted">
             {cur && <>{fmtDuration(cur.occupied_seconds)} terpakai{cur.offline_seconds > 0 && <> · offline {fmtDuration(cur.offline_seconds)} dikecualikan</>}</>}
@@ -143,7 +143,7 @@ export default function Dashboard() {
         </Card>
         <Card>
           <div className="text-sm font-semibold text-muted">Rata-rata sesi</div>
-          <div className="mt-2 text-[40px] font-extrabold leading-none">{cur?.avg_session_seconds != null ? fmtDuration(cur.avg_session_seconds) : '–'}</div>
+          <div className="mt-2 text-[30px] font-extrabold leading-none sm:text-[40px]">{cur?.avg_session_seconds != null ? fmtDuration(cur.avg_session_seconds) : '–'}</div>
           <div className="mt-2 text-xs text-muted">Sesi terpanjang <b className="text-fg">{cur?.longest_session_seconds != null ? fmtDuration(cur.longest_session_seconds) : '–'}</b></div>
         </Card>
       </div>
