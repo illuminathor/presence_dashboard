@@ -116,7 +116,7 @@ export function useHeatmap(device: string | null) {
   return cells
 }
 
-export interface TransitionRow { ts: number; status: 'occupied' | 'vacant'; duration_s: number | null; debounced: boolean }
+export interface TransitionRow { id: number; ts: number; status: 'occupied' | 'vacant'; duration_s: number | null; debounced: boolean }
 
 /** Semua perubahan status mentah, terbaru dulu, per halaman; debounced = dianggap kedipan di statistik. */
 export async function fetchTransitions(device: string, from: number, to: number, limit: number, offset: number) {
