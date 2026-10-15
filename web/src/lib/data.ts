@@ -22,15 +22,30 @@ export function useDevices() {
   return devices
 }
 
+// Satu koneksi SSE bersama untuk seluruh halaman. Browser membatasi ±6 koneksi HTTP/1.1 per host (dibagi antar tab);
+// kalau tiap hook membuka EventSource sendiri, koneksi habis dan request biasa mengantre tanpa ujung.
+type Listener = (device: string) => void
+const listeners = new Set<Listener>()
+let es: EventSource | null = null
+function subscribe(fn: Listener) {
+  listeners.add(fn)
+  if (!es) {
+    es = new EventSource('/api/stream')
+    es.onmessage = (e) => { try { const d = JSON.parse(e.data).device; listeners.forEach((l) => l(d)) } catch { /* abaikan */ } }
+  }
+  return () => {
+    listeners.delete(fn)
+    if (listeners.size === 0) { es?.close(); es = null }
+  }
+}
+
 /** Pemberitahuan "ada data baru" dari server (SSE). Browser menyambung ulang otomatis. */
 function useChangeStream(device: string | null, onChange: () => void) {
   const cb = useRef(onChange)
   cb.current = onChange
   useEffect(() => {
     if (!device) return
-    const es = new EventSource('/api/stream')
-    es.onmessage = (e) => { try { if (JSON.parse(e.data).device === device) cb.current() } catch { /* abaikan */ } }
-    return () => es.close()
+    return subscribe((d) => { if (d === device) cb.current() })
   }, [device])
 }
 
