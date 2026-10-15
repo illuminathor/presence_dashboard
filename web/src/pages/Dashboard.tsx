@@ -184,12 +184,13 @@ function EventLog({ device, from, to, room }: { device: string; from: number; to
   const [rows, setRows] = useState<TransitionRow[]>([])
   const [total, setTotal] = useState(0)
   const [err, setErr] = useState('')
+  const [loaded, setLoaded] = useState(false)
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(10)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     let live = true
-    fetchTransitions(device, from, to, size, page * size).then((r) => { if (live) { setErr(r.error); if (!r.error) { setRows(r.rows); setTotal(r.total) } } })
+    fetchTransitions(device, from, to, size, page * size).then((r) => { if (live) { setLoaded(true); setErr(r.error); if (!r.error) { setRows(r.rows); setTotal(r.total) } } })
     return () => { live = false }
   }, [device, from, to, page, size])
   const pages = Math.max(1, Math.ceil(total / size))
@@ -227,7 +228,7 @@ function EventLog({ device, from, to, room }: { device: string; from: number; to
                 <td className="text-muted">{e.duration_s === null ? 'berjalan' : fmtDuration(e.duration_s)}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={3} className={`py-6 text-center ${err ? 'text-bad' : 'text-muted'}`}>{err ? `Gagal memuat event: ${err}` : 'Tidak ada perubahan status pada periode ini (status tidak berubah).'}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={3} className={`py-6 text-center ${err ? 'text-bad' : 'text-muted'}`}>{err ? `Gagal memuat event: ${err}` : !loaded ? 'Memuat…' : 'Tidak ada perubahan status pada periode ini (status tidak berubah).'}</td></tr>}
           </tbody>
         </table>
       </div>
