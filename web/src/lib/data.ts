@@ -121,6 +121,7 @@ export interface TransitionRow { id: number; ts: number; status: 'occupied' | 'v
 /** Semua perubahan status mentah, terbaru dulu, per halaman; debounced = dianggap kedipan di statistik. */
 export async function fetchTransitions(device: string, from: number, to: number, limit: number, offset: number) {
   try {
-    return await get<{ total: number; rows: TransitionRow[] }>(`/transitions?device=${encodeURIComponent(device)}&from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
-  } catch { return { total: 0, rows: [] as TransitionRow[] } }
+    const r = await get<{ total: number; rows: TransitionRow[] }>(`/transitions?device=${encodeURIComponent(device)}&from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
+    return { ...r, error: '' }
+  } catch (e) { return { total: 0, rows: [] as TransitionRow[], error: (e as Error).message || 'gagal memuat' } }
 }
